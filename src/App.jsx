@@ -1,1 +1,462 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";\n\nconst STORAGE_KEY = "badminton_lineup_react_v1";\n\nconst GENDER_OPTIONS = [\n  { value: "M", label: "男" },\n  { value: "F", label: "女" },\n  { value: "X", label: "不公開" },\n];\n\nfunction uid() {\n  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);\n}\n\nfunction emptySlots(groups, slots) {\n  return Array.from({ length: groups }, () => Array.from({ length: slots }, () => \"\"));\n}\n\nfunction initialState() {\n  return {\n    players: {},\n    bench: [],\n    queue: emptySlots(4, 4),\n    courts: emptySlots(4, 4),\n  };\n}\n\nfunction safeParse(raw, fallback) {\n  try {\n    const v = JSON.parse(raw);\n    return v ?? fallback;\n  } catch {\n    return fallback;\n  }\n}\n\nfunction normalize(st) {\n  const next = { ...initialState(), ...(st || {}) };\n  next.queue = Array.from({ length: 4 }, (_, gi) => {\n    const row = next.queue?.[gi] || [];\n    return Array.from({ length: 4 }, (_, si) => row[si] || \"\");\n  });\n  next.courts = Array.from({ length: 4 }, (_, ci) => {\n    const row = next.courts?.[ci] || [];\n    return Array.from({ length: 4 }, (_, si) => row[si] || \"\");\n  });\n  next.bench = Array.isArray(next.bench) ? next.bench : [];\n  next.players = next.players || {};\n  return next;\n}\n\nfunction loadState() {\n  const raw = localStorage.getItem(STORAGE_KEY);\n  if (!raw) return initialState();\n  return normalize(safeParse(raw, initialState()));\n}\n\nfunction saveState(st) {\n  localStorage.setItem(STORAGE_KEY, JSON.stringify(st));\n}\n\nfunction titleGender(g) {\n  if (g === \"M\") return \"男\";\n  if (g === \"F\") return \"女\";\n  return \"不公開\";\n}\n\nfunction findPlayerLocation(state, playerId) {\n  if (state.bench.includes(playerId)) return { type: \"bench\" };\n  for (let gi = 0; gi < 4; gi++) {\n    for (let si = 0; si < 4; si++) {\n      if (state.queue[gi][si] === playerId) return { type: \"queue\", gi, si };\n    }\n  }\n  for (let ci = 0; ci < 4; ci++) {\n    for (let si = 0; si < 4; si++) {\n      if (state.courts[ci][si] === playerId) return { type: \"court\", ci, si };\n    }\n  }\n  return null;\n}\n\nfunction removeFromWherever(state, playerId) {\n  const loc = findPlayerLocation(state, playerId);\n  if (!loc) return;\n  if (loc.type === \"bench\") {\n    state.bench = state.bench.filter((x) => x !== playerId);\n    return;\n  }\n  if (loc.type === \"queue\") {\n    state.queue[loc.gi][loc.si] = \"\";\n    return;\n  }\n  if (loc.type === \"court\") {\n    state.courts[loc.ci][loc.si] = \"\";\n    return;\n  }\n}\n\nfunction compactBench(state) {\n  // bench 去重 + 排除不存在玩家\n  const seen = new Set();\n  const out = [];\n  for (const id of state.bench) {\n    if (!state.players[id]) continue;\n    if (seen.has(id)) continue;\n    seen.add(id);\n    out.push(id);\n  }\n  state.bench = out;\n}\n\nfunction groupSummary(players) {\n  const byLevel = new Map();\n  const byGender = new Map();\n  for (const p of players) {\n    byLevel.set(p.level, (byLevel.get(p.level) || 0) + 1);\n    byGender.set(p.gender, (byGender.get(p.gender) || 0) + 1);\n  }\n  const levelStr = Array.from(byLevel.entries())\n    .sort((a, b) => (a[0] > b[0] ? 1 : -1))\n    .map(([k, v]) => `${k}×${v}`)\n    .join(\" \") || \"—\";\n\n  const genderStr = Array.from(byGender.entries())\n    .map(([k, v]) => `${titleGender(k)}×${v}`)\n    .join(\" \") || \"—\";\n\n  return { levelStr, genderStr };\n}\n\nfunction minutesSince(ts) {\n  if (!ts) return null;\n  return Math.floor((Date.now() - ts) / 60000);\n}\n\nfunction isCourtEmpty(c) {\n  return c.every((x) => !x);\n}\n\nexport default function App() {\n  const [state, setState] = useState(() => loadState());\n  const [search, setSearch] = useState(\"\");\n  const [name, setName] = useState(\"\");\n  const [level, setLevel] = useState(\"B\");\n  const [gender, setGender] = useState(\"M\");\n  const [draggingId, setDraggingId] = useState(null);\n\n  useEffect(() => {\n    const st = normalize(state);\n    saveState(st);\n  }, [state]);\n\n  const playersList = useMemo(() => {\n    const q = search.trim().toLowerCase();\n    const ids = Object.keys(state.players);\n    const arr = ids.map((id) => state.players[id]);\n    const filtered = q ? arr.filter((p) => p.name.toLowerCase().includes(q)) : arr;\n    // bench 先、再依 gamesPlayed、再依 name\n    const benchSet = new Set(state.bench);\n    filtered.sort((a, b) => {\n      const ab = benchSet.has(a.id) ? 0 : 1;\n      const bb = benchSet.has(b.id) ? 0 : 1;\n      if (ab !== bb) return ab - bb;\n      if (a.gamesPlayed !== b.gamesPlayed) return a.gamesPlayed - b.gamesPlayed;\n      return a.name.localeCompare(b.name, \"zh-Hant\");\n    });\n    return filtered;\n  }, [state.players, state.bench, search]);\n\n  function addPlayer() {\n    const n = name.trim();\n    if (!n) return;\n    // 避免重名\n    const exists = Object.values(state.players).some((p) => p.name === n);\n    if (exists) {\n      alert(\"已有同名隊員，請改名或加註。\");\n      return;\n    }\n    const id = uid();\n    const p = {\n      id,\n      name: n,\n      level,\n      gender,\n      gamesPlayed: 0,\n      absent: false,\n      lastOffTs: 0,\n    };\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      next.players[id] = p;\n      next.bench.unshift(id);\n      compactBench(next);\n      return next;\n    });\n    setName(\"\");\n  }\n\n  function toggleAbsent(id) {\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      const p = next.players[id];\n      if (!p) return prev;\n      p.absent = !p.absent;\n      // 暫離：一律回 bench，且從 queue/court 移除\n      if (p.absent) {\n        removeFromWherever(next, id);\n        next.bench.unshift(id);\n        compactBench(next);\n      }\n      return next;\n    });\n  }\n\n  function removePlayer(id) {\n    const p = state.players[id];\n    if (!p) return;\n    if (!confirm(`確定刪除「${p.name}」？`)) return;\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      removeFromWherever(next, id);\n      delete next.players[id];\n      // 清掉所有槽位\n      for (let gi = 0; gi < 4; gi++) for (let si = 0; si < 4; si++) if (next.queue[gi][si] === id) next.queue[gi][si] = \"\";\n      for (let ci = 0; ci < 4; ci++) for (let si = 0; si < 4; si++) if (next.courts[ci][si] === id) next.courts[ci][si] = \"\";\n      compactBench(next);\n      return next;\n    });\n  }\n\n  function onDragStart(e, playerId) {\n    if (state.players[playerId]?.absent) {\n      e.preventDefault();\n      return;\n    }\n    setDraggingId(playerId);\n    e.dataTransfer.setData(\"text/plain\", playerId);\n    e.dataTransfer.effectAllowed = \"move\";\n  }\n\n  function onDragEnd() {\n    setDraggingId(null);\n  }\n\n  function allowDrop(e) {\n    e.preventDefault();\n    e.dataTransfer.dropEffect = \"move\";\n  }\n\n  function dropToSlot(e, target) {\n    e.preventDefault();\n    const playerId = e.dataTransfer.getData(\"text/plain\");\n    if (!playerId) return;\n    if (!state.players[playerId] || state.players[playerId].absent) return;\n\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n\n      // 移除原位置\n      removeFromWherever(next, playerId);\n\n      if (target.type === \"bench\") {\n        next.bench.unshift(playerId);\n        compactBench(next);\n        return next;\n      }\n\n      if (target.type === \"queue\") {\n        const { gi, si } = target;\n        const occupying = next.queue[gi][si];\n        next.queue[gi][si] = playerId;\n        // 若原本有人被擠出 → 回 bench\n        if (occupying && occupying !== playerId) {\n          next.bench.unshift(occupying);\n        }\n        compactBench(next);\n        return next;\n      }\n\n      if (target.type === \"court\") {\n        const { ci, si } = target;\n        const occupying = next.courts[ci][si];\n        next.courts[ci][si] = playerId;\n        if (occupying && occupying !== playerId) {\n          next.bench.unshift(occupying);\n        }\n        compactBench(next);\n        return next;\n      }\n\n      return next;\n    });\n  }\n\n  function clearQueueSlot(gi, si) {\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      const id = next.queue[gi][si];\n      next.queue[gi][si] = \"\";\n      if (id) {\n        next.bench.unshift(id);\n        compactBench(next);\n      }\n      return next;\n    });\n  }\n\n  function clearCourtSlot(ci, si) {\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      const id = next.courts[ci][si];\n      next.courts[ci][si] = \"\";\n      if (id) {\n        next.bench.unshift(id);\n        compactBench(next);\n      }\n      return next;\n    });\n  }\n\n  function clearGroup(gi) {\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      for (let si = 0; si < 4; si++) {\n        const id = next.queue[gi][si];\n        next.queue[gi][si] = \"\";\n        if (id) next.bench.unshift(id);\n      }\n      compactBench(next);\n      return next;\n    });\n  }\n\n  function shiftUp() {\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      next.queue[0] = next.queue[1];\n      next.queue[1] = next.queue[2];\n      next.queue[2] = next.queue[3];\n      next.queue[3] = [\"\", \"\", \"\", \"\"];\n      return next;\n    });\n  }\n\n  function courtUpFromQueue1(ci) {\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      if (!isCourtEmpty(next.courts[ci])) {\n        alert(\"該場地不是空的，請先下場或清空。\");\n        return prev;\n      }\n      const group = next.queue[0];\n      const filled = group.filter(Boolean);\n      if (filled.length < 4) {\n        alert(`順位 1 人數不足（目前 ${filled.length}/4）。`);\n        return prev;\n      }\n      next.courts[ci] = [...group];\n      next.queue[0] = [\"\", \"\", \"\", \"\"];\n      return next;\n    });\n  }\n\n  function courtDown(ci) {\n    // 下場：場上 4 人回 bench + 次數+1 + 記錄 lastOffTs\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      const ids = next.courts[ci].filter(Boolean);\n      if (ids.length === 0) return prev;\n      const ts = Date.now();\n      for (const id of ids) {\n        const p = next.players[id];\n        if (p) {\n          p.gamesPlayed += 1;\n          p.lastOffTs = ts;\n        }\n        next.bench.unshift(id);\n      }\n      next.courts[ci] = [\"\", \"\", \"\", \"\"];\n      compactBench(next);\n      return next;\n    });\n  }\n\n  function resetTodayCounts() {\n    if (!confirm(\"要把所有人的『今日上場次數』清零嗎？（人員名單與排點狀態保留）\")) return;\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      for (const id of Object.keys(next.players)) {\n        next.players[id].gamesPlayed = 0;\n      }\n      return next;\n    });\n  }\n\n  function resetAll() {\n    if (!confirm(\"要全部清空回到初始狀態嗎？（人員名單也會刪除）\")) return;\n    setState(initialState());\n  }\n\n  function exportJSON() {\n    const blob = new Blob([JSON.stringify(state, null, 2)], { type: \"application/json\" });\n    const url = URL.createObjectURL(blob);\n    const a = document.createElement(\"a\");\n    a.href = url;\n    a.download = \"badminton-lineup.json\";\n    a.click();\n    URL.revokeObjectURL(url);\n  }\n\n  function importJSON(e) {\n    const file = e.target.files?.[0];\n    if (!file) return;\n    const reader = new FileReader();\n    reader.onload = () => {\n      const st = safeParse(String(reader.result || \"\"), null);\n      if (!st) {\n        alert(\"JSON 解析失敗\");\n        return;\n      }\n      setState(normalize(st));\n    };\n    reader.readAsText(file);\n    e.target.value = \"\";\n  }\n\n  function quickAddToQueue4(playerId) {\n    setState((prev) => {\n      const next = structuredClone(normalize(prev));\n      if (!next.players[playerId] || next.players[playerId].absent) return prev;\n      removeFromWherever(next, playerId);\n      // 找 queue[3] 第一個空槽\n      const si = next.queue[3].findIndex((x) => !x);\n      if (si === -1) {\n        // 沒空槽就回 bench\n        next.bench.unshift(playerId);\n        compactBench(next);\n        return next;\n      }\n      next.queue[3][si] = playerId;\n      return next;\n    });\n  }\n\n  function warningForPlayer(p) {\n    const m = minutesSince(p.lastOffTs);\n    if (m !== null && m < 5) return `剛下場約 ${m} 分鐘內`; // 提醒但不阻擋\n    return \"\";\n  }\n\n  return (\n    <div className=\"container\">\n      <div className=\"header\">\n        <div className=\"h1\">羽球排點工具（4 面場｜4 組順位｜手動上/下場）</div>\n        <div className=\"toolbar\">\n          <button className=\"btn\" onClick={resetTodayCounts}>清今日次數</button>\n          <button className=\"btn\" onClick={exportJSON}>匯出 JSON</button>\n          <label className=\"btn\" style={{ display: \"inline-flex\", alignItems: \"center\", gap: 8 }}>\n            匯入 JSON\n            <input type=\"file\" accept=\"application/json\" onChange={importJSON} style={{ display: \"none\" }} />\n          </label>\n          <button className=\"btn\" onClick={resetAll}>全部重置</button>\n        </div>\n      </div>\n\n      <div className=\"grid\">\n        {/* Bench */}\n        <div className=\"card\">\n          <div className=\"card-h\">\n            <div className=\"card-title\">休息區</div>\n            <div className=\"small\">拖曳到順位或場地；也可點「+4」快速放到順位 4</div>\n          </div>\n          <div className=\"card-b\">\n            <div className=\"row\" style={{ marginBottom: 10 }}>\n              <input className=\"input\" value={name} onChange={(e) => setName(e.target.value)} placeholder=\"新增隊員姓名\" />\n              <select className=\"select\" value={level} onChange={(e) => setLevel(e.target.value)}>\n                {[\n                  { value: \"A\", label: \"A\" },\n                  { value: \"B\", label: \"B\" },\n                  { value: \"C\", label: \"C\" },\n                  { value: \"D\", label: \"D\" },\n                ].map((o) => (\n                  <option key={o.value} value={o.value}>{o.label}</option>\n                ))}\n              </select>\n              <select className=\"select\" value={gender} onChange={(e) => setGender(e.target.value)}>\n                {GENDER_OPTIONS.map((o) => (\n                  <option key={o.value} value={o.value}>{o.label}</option>\n                ))}\n              </select>\n              <button className=\"btn primary\" onClick={addPlayer}>新增</button>\n            </div>\n\n            <div className=\"row\" style={{ marginBottom: 10 }}>\n              <input className=\"input\" value={search} onChange={(e) => setSearch(e.target.value)} placeholder=\"搜尋隊員\" />\n              <div className=\"small\">人數：{Object.keys(state.players).length}</div>\n            </div>\n\n            <div\n              className=\"list\"\n              onDragOver={(e) => allowDrop(e)}\n              onDrop={(e) => dropToSlot(e, { type: \"bench\" })}\n              style={{ paddingTop: 2 }}\n            >\n              {playersList.map((p) => {\n                const loc = findPlayerLocation(state, p.id);\n                const status = p.absent\n                  ? \"暫離\"\n                  : loc?.type === \"bench\"\n                  ? \"休息\"\n                  : loc?.type === \"queue\"\n                  ? `順位 ${loc.gi + 1}`\n                  : loc?.type === \"court\"\n                  ? `場地 ${loc.ci + 1}`\n                  : \"\";\n\n                const isDragging = draggingId === p.id;\n\n                return (\n                  <div\n                    key={p.id}\n                    className={\"player\" + (isDragging ? \" dragging\" : \"\")}\n                    draggable={!p.absent}\n                    onDragStart={(e) => onDragStart(e, p.id)}\n                    onDragEnd={onDragEnd}\n                    title={p.absent ? \"暫離中\" : \"拖曳移動\"}\n                  >\n                    <div style={{ minWidth: 0 }}>\n                      <div style={{ display: \"flex\", alignItems: \"center\", gap: 8, flexWrap: \"wrap\" }}>\n                        <div className=\"name\">{p.name}</div>\n                        <div className=\"badges\">\n                          <span className=\"badge\">{p.level}</span>\n                          <span className=\"badge\">{titleGender(p.gender)}</span>\n                          <span className=\"badge\">今日 {p.gamesPlayed}</span>\n                          <span className=\"badge\">{status}</span>\n                        </div>\n                      </div>\n                      {warningForPlayer(p) ? <div className=\"small\">⚠ {warningForPlayer(p)}</div> : null}\n                    </div>\n                    <div className=\"p-actions\">\n                      <button className=\"iconbtn\" onClick={() => quickAddToQueue4(p.id)} disabled={p.absent}>+4</button>\n                      <button className=\"iconbtn\" onClick={() => toggleAbsent(p.id)}>{p.absent ? \"回來\" : \"暫離\"}</button>\n                      <button className=\"iconbtn\" onClick={() => removePlayer(p.id)}>刪</button>\n                    </div>\n                  </div>\n                );\n              })}\n              <div className=\"dropHint\">把人拖回這裡＝回休息區</div>\n            </div>\n          </div>\n        </div>\n\n        {/* Queue */}\n        <div className=\"card\">\n          <div className=\"card-h\">\n            <div className=\"card-title\">順位（固定 4 組）</div>\n            <div className=\"section-actions\">\n              <button className=\"btn\" onClick={shiftUp}>整組上移</button>\n            </div>\n          </div>\n          <div className=\"card-b\">\n            <div className=\"queueGrid\">\n              {state.queue.map((group, gi) => {\n                const ps = group.filter(Boolean).map((id) => state.players[id]).filter(Boolean);\n                const { levelStr, genderStr } = groupSummary(ps);\n                return (\n                  <div key={gi} className=\"group\">\n                    <div className=\"group-h\">\n                      <div>\n                        <div className=\"group-title\">順位 {gi + 1}</div>\n                        <div className=\"small\">等級：{levelStr} · 性別：{genderStr}</div>\n                      </div>\n                      <button className=\"btn\" onClick={() => clearGroup(gi)}>清空本組</button>\n                    </div>\n                    <div className=\"slots\">\n                      {group.map((pid, si) => {\n                        const p = pid ? state.players[pid] : null;\n                        const w = p ? warningForPlayer(p) : \"\";\n                        return (\n                          <Slot\n                            key={`${gi}-${si}`}\n                            label={`槽位 ${si + 1}`}\n                            player={p}\n                            warning={w}\n                            onClear={() => clearQueueSlot(gi, si)}\n                            onDragOver={allowDrop}\n                            onDrop={(e) => dropToSlot(e, { type: \"queue\", gi, si })}\n                          />\n                        );\n                      })}\n                    </div>\n                  </div>\n                );\n              })}\n            </div>\n          </div>\n        </div>\n\n        {/* Courts */}\n        <div className=\"card\">\n          <div className=\"card-h\">\n            <div className=\"card-title\">場地（4 面）</div>\n            <div className=\"small\">空場可按「上場」從順位 1 帶入；打完按「下場」</div>\n          </div>\n          <div className=\"card-b\">\n            <div className=\"courts\">\n              {state.courts.map((court, ci) => {\n                const empty = isCourtEmpty(court);\n                return (\n                  <div key={ci} className=\"court\">\n                    <div className=\"court-h\">\n                      <div className=\"court-title\">場地 {ci + 1}</div>\n                      <div className=\"court-actions\">\n                        <button className=\"btn\" onClick={() => courtUpFromQueue1(ci)} disabled={!empty}>上場</button>\n                        <button className=\"btn primary\" onClick={() => courtDown(ci)} disabled={empty}>下場</button>\n                      </div>\n                    </div>\n\n                    <div className=\"split\">\n                      {[0, 1, 2, 3].map((si) => {\n                        const pid = court[si];\n                        const p = pid ? state.players[pid] : null;\n                        return (\n                          <Slot\n                            key={`${ci}-${si}`}\n                            label={si < 2 ? `隊伍 A-${si + 1}` : `隊伍 B-${si - 1}`}\n                            player={p}\n                            warning={p ? warningForPlayer(p) : \"\"}\n                            onClear={() => clearCourtSlot(ci, si)}\n                            onDragOver={allowDrop}\n                            onDrop={(e) => dropToSlot(e, { type: \"court\", ci, si })}\n                          />\n                        );\n                      })}\n                    </div>\n                    <div className=\"small\" style={{ marginTop: 8 }}>\n                      你也可以直接把人拖進場地槽位（手動指定誰打哪隊）。\n                    </div>\n                  </div>\n                );\n              })}\n            </div>\n          </div>\n        </div>\n      </div>\n\n      <div className=\"footer\">\n        提示：資料會自動保留在此裝置瀏覽器（localStorage）。\n      </div>\n    </div>\n  );\n}\n\nfunction Slot({ label, player, onClear, warning, onDragOver, onDrop }) {\n  const [over, setOver] = useState(false);\n  return (\n    <div\n      className={\"slot\" + (over ? \" over\" : \"\")}\n      onDragOver={(e) => {\n        onDragOver?.(e);\n        if (!over) setOver(true);\n      }}\n      onDragLeave={() => setOver(false)}\n      onDrop={(e) => {\n        setOver(false);\n        onDrop?.(e);\n      }}\n    >\n      <div className=\"slotTop\">\n        <div className=\"slotLabel\">{label}</div>\n        {player ? (\n          <div className=\"slotClear\" onClick={onClear} title=\"清空\">清</div>\n        ) : (\n          <div className=\"slotLabel\" style={{ fontWeight: 500, color: \"#9ca3af\" }}>拖到這裡</div>\n        )}\n      </div>\n      {player ? (\n        <div>\n          <div style={{ display: \"flex\", alignItems: \"center\", gap: 8, flexWrap: \"wrap\" }}>\n            <div style={{ fontWeight: 800 }}>{player.name}</div>\n            <span className=\"badge\">{player.level}</span>\n            <span className=\"badge\">{titleGender(player.gender)}</span>\n          </div>\n          {warning ? <div className=\"warn\">⚠ {warning}</div> : null}\n        </div>\n      ) : (\n        <div style={{ height: 18 }} />\n      )}\n    </div>\n  );\n}\n
+import React, { useEffect, useMemo, useState } from "react";
+
+const STORAGE_KEY = "badminton_lineup_v3";
+
+function emptySlots(groups, slots) {
+  return Array.from({ length: groups }, () =>
+    Array.from({ length: slots }, () => "")
+  );
+}
+
+function initialState() {
+  return {
+    players: {},
+    bench: [],
+    queue: emptySlots(4, 4), // 4 組順位，每組 4 槽
+    courts: emptySlots(4, 4), // 4 面場地，每面 4 人
+  };
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return initialState();
+  try {
+    const st = JSON.parse(raw);
+    // 簡單防呆：缺欄位就補上
+    return {
+      ...initialState(),
+      ...st,
+      queue: st?.queue?.length === 4 ? st.queue : emptySlots(4, 4),
+      courts: st?.courts?.length === 4 ? st.courts : emptySlots(4, 4),
+      bench: Array.isArray(st?.bench) ? st.bench : [],
+      players: st?.players || {},
+    };
+  } catch {
+    return initialState();
+  }
+}
+
+function saveState(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+function removeEverywhere(next, id) {
+  next.bench = next.bench.filter((x) => x !== id);
+  next.queue = next.queue.map((g) => g.map((x) => (x === id ? "" : x)));
+  next.courts = next.courts.map((g) => g.map((x) => (x === id ? "" : x)));
+}
+
+function isCourtEmpty(court) {
+  return court.every((x) => !x);
+}
+
+export default function App() {
+  const [state, setState] = useState(loadState);
+
+  const [name, setName] = useState("");
+  const [level, setLevel] = useState("B");
+  const [gender, setGender] = useState("男");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    saveState(state);
+  }, [state]);
+
+  function addPlayer() {
+    const n = name.trim();
+    if (!n) return;
+
+    const sameName = Object.values(state.players).some((p) => p.name === n);
+    if (sameName) {
+      alert("已有同名隊員，請改名或加註。");
+      return;
+    }
+
+    const id = uid();
+    const newPlayer = {
+      id,
+      name: n,
+      level,
+      gender,
+      games: 0,
+      absent: false,
+      lastOffTs: 0,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      players: { ...prev.players, [id]: newPlayer },
+      bench: [id, ...prev.bench],
+    }));
+
+    setName("");
+  }
+
+  function removePlayer(id) {
+    const p = state.players[id];
+    if (!p) return;
+    if (!confirm(`確定刪除「${p.name}」？`)) return;
+
+    setState((prev) => {
+      const next = structuredClone(prev);
+      removeEverywhere(next, id);
+      delete next.players[id];
+      return next;
+    });
+  }
+
+  function moveToBench(id) {
+    setState((prev) => {
+      const next = structuredClone(prev);
+      removeEverywhere(next, id);
+      next.bench.unshift(id);
+      return next;
+    });
+  }
+
+  function placeIntoQueue(id, gi, si) {
+    setState((prev) => {
+      const next = structuredClone(prev);
+
+      // 先從任何地方移除（避免同一人同時出現）
+      removeEverywhere(next, id);
+
+      // 目標槽位如果有人，擠回 bench
+      const replaced = next.queue[gi][si];
+      next.queue[gi][si] = id;
+      if (replaced) next.bench.unshift(replaced);
+
+      return next;
+    });
+  }
+
+  function clearQueueSlot(gi, si) {
+    setState((prev) => {
+      const next = structuredClone(prev);
+      const id = next.queue[gi][si];
+      next.queue[gi][si] = "";
+      if (id) next.bench.unshift(id);
+      return next;
+    });
+  }
+
+  function clearGroup(gi) {
+    setState((prev) => {
+      const next = structuredClone(prev);
+      for (let si = 0; si < 4; si++) {
+        const id = next.queue[gi][si];
+        next.queue[gi][si] = "";
+        if (id) next.bench.unshift(id);
+      }
+      return next;
+    });
+  }
+
+  function shiftUp() {
+    // 2→1、3→2、4→3、4 清空
+    setState((prev) => {
+      const next = structuredClone(prev);
+      next.queue[0] = next.queue[1];
+      next.queue[1] = next.queue[2];
+      next.queue[2] = next.queue[3];
+      next.queue[3] = ["", "", "", ""];
+      return next;
+    });
+  }
+
+  function startCourt(ci) {
+    setState((prev) => {
+      const next = structuredClone(prev);
+
+      if (!isCourtEmpty(next.courts[ci])) {
+        alert("該場地不是空的，請先下場或清空。");
+        return prev;
+      }
+
+      const group = next.queue[0];
+      if (group.filter(Boolean).length < 4) {
+        alert("順位 1 人數不足（需要 4 人）");
+        return prev;
+      }
+
+      next.courts[ci] = [...group];
+      next.queue[0] = ["", "", "", ""];
+      return next;
+    });
+  }
+
+  function endCourt(ci) {
+    // 下場：場上 4 人回 bench + 今日次數+1 + 記 lastOffTs
+    setState((prev) => {
+      const next = structuredClone(prev);
+      const ids = next.courts[ci].filter(Boolean);
+
+      if (ids.length === 0) return prev;
+
+      const ts = Date.now();
+      for (const id of ids) {
+        const p = next.players[id];
+        if (p) {
+          p.games += 1;
+          p.lastOffTs = ts;
+        }
+        next.bench.unshift(id);
+      }
+
+      next.courts[ci] = ["", "", "", ""];
+      return next;
+    });
+  }
+
+  function resetAll() {
+    if (!confirm("要全部清空回到初始狀態嗎？（人員名單也會刪除）")) return;
+    setState(initialState());
+  }
+
+  function resetTodayCounts() {
+    if (!confirm("要把所有人的『今日上場次數』清零嗎？（人員名單與排點狀態保留）")) return;
+    setState((prev) => {
+      const next = structuredClone(prev);
+      for (const id of Object.keys(next.players)) {
+        next.players[id].games = 0;
+      }
+      return next;
+    });
+  }
+
+  const benchPlayers = useMemo(() => {
+    const ids = new Set(state.bench);
+    const q = search.trim();
+    return Object.values(state.players)
+      .filter((p) => ids.has(p.id))
+      .filter((p) => (q ? p.name.includes(q) : true))
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
+  }, [state.players, state.bench, search]);
+
+  return (
+    <div style={{ padding: 16, maxWidth: 1100, margin: "0 auto" }}>
+      <h2 style={{ marginTop: 0 }}>羽球排點工具（4 面場｜順位固定 4 組｜手動排順位/上下場）</h2>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <button onClick={resetTodayCounts}>清今日次數</button>
+        <button onClick={resetAll}>全部重置</button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+        {/* 新增 / 搜尋 */}
+        <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12, background: "#fff" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input
+              style={{ padding: 8, minWidth: 200 }}
+              placeholder="新增隊員姓名"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <select style={{ padding: 8 }} value={level} onChange={(e) => setLevel(e.target.value)}>
+              <option>A</option>
+              <option>B</option>
+              <option>C</option>
+              <option>D</option>
+            </select>
+            <select style={{ padding: 8 }} value={gender} onChange={(e) => setGender(e.target.value)}>
+              <option>男</option>
+              <option>女</option>
+              <option>不公開</option>
+            </select>
+            <button onClick={addPlayer}>新增</button>
+
+            <input
+              style={{ padding: 8, minWidth: 200 }}
+              placeholder="搜尋（休息區）"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* 主要區塊 */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr",
+            gap: 12,
+          }}
+        >
+          {/* 休息區 */}
+          <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12, background: "#fff" }}>
+            <h3 style={{ marginTop: 0 }}>休息區（可拖曳到順位/場地）</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {benchPlayers.map((p) => (
+                <div
+                  key={p.id}
+                  draggable
+                  onDragStart={(e) => e.dataTransfer.setData("text/plain", p.id)}
+                  style={{
+                    padding: 10,
+                    border: "1px solid #ddd",
+                    borderRadius: 10,
+                    background: "#fafafa",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <div>
+                    <b>{p.name}</b>（{p.level}/{p.gender}） · 今日 {p.games}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => removePlayer(p.id)}>刪</button>
+                  </div>
+                </div>
+              ))}
+              {benchPlayers.length === 0 ? <div style={{ color: "#777" }}>（目前休息區沒有隊員）</div> : null}
+            </div>
+          </div>
+
+          {/* 順位 */}
+          <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12, background: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0 }}>順位（固定 4 組 × 4 槽）</h3>
+              <button onClick={shiftUp}>整組上移（2→1、3→2、4→3）</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 10 }}>
+              {state.queue.map((group, gi) => (
+                <div key={gi} style={{ padding: 10, border: "1px solid #eee", borderRadius: 12, background: "#fff" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <b>順位 {gi + 1}</b>
+                    <button onClick={() => clearGroup(gi)}>清空本組</button>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                    {group.map((pid, si) => (
+                      <div
+                        key={si}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          const id = e.dataTransfer.getData("text/plain");
+                          if (id) placeIntoQueue(id, gi, si);
+                        }}
+                        style={{
+                          minHeight: 52,
+                          padding: 10,
+                          border: "1px dashed #aaa",
+                          borderRadius: 10,
+                          background: "#fafafa",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        {pid ? (
+                          <>
+                            <div>
+                              {state.players[pid]?.name}（{state.players[pid]?.level}/{state.players[pid]?.gender}）
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button onClick={() => moveToBench(pid)}>退回</button>
+                              <button onClick={() => clearQueueSlot(gi, si)}>清</button>
+                            </div>
+                          </>
+                        ) : (
+                          <span style={{ color: "#777" }}>[拖人到這裡]</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 場地 */}
+          <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12, background: "#fff" }}>
+            <h3 style={{ marginTop: 0 }}>場地（4 面）</h3>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+              {state.courts.map((court, ci) => {
+                const empty = isCourtEmpty(court);
+                const q1Full = state.queue[0].filter(Boolean).length === 4;
+
+                return (
+                  <div key={ci} style={{ padding: 10, border: "1px solid #eee", borderRadius: 12, background: "#fff" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <b>場地 {ci + 1}</b>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => startCourt(ci)} disabled={!empty || !q1Full}>
+                          上場（從順位 1）
+                        </button>
+                        <button onClick={() => endCourt(ci)} disabled={empty}>
+                          下場
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                      {court.map((pid, si) => (
+                        <div
+                          key={si}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            const id = e.dataTransfer.getData("text/plain");
+                            if (!id) return;
+
+                            setState((prev) => {
+                              const next = structuredClone(prev);
+                              removeEverywhere(next, id);
+
+                              const replaced = next.courts[ci][si];
+                              next.courts[ci][si] = id;
+                              if (replaced) next.bench.unshift(replaced);
+
+                              return next;
+                            });
+                          }}
+                          style={{
+                            minHeight: 52,
+                            padding: 10,
+                            border: "1px dashed #aaa",
+                            borderRadius: 10,
+                            background: "#fafafa",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          {pid ? (
+                            <>
+                              <div>{state.players[pid]?.name}</div>
+                              <button onClick={() => moveToBench(pid)}>退回</button>
+                            </>
+                          ) : (
+                            <span style={{ color: "#777" }}>[可拖人進來]</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
+                      提示：你也可以直接把人拖進場地槽位（手動指定隊伍位置）。<br />
+                      「上場」只有在空場且順位 1 滿 4 人時可按。
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, color: "#666", fontSize: 12 }}>
+        資料會保留在本機瀏覽器（localStorage）。
+      </div>
+    </div>
+  );
+}
