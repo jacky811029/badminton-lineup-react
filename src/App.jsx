@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 /**
  * v1.0.0 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.4";
+const VERSION_NAME = "v1.0.5";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -142,6 +142,11 @@ function isAllEmpty(arr) {
   return arr.every((x) => !x);
 }
 
+function ensureCourtTimer(court) {
+  if (court.startTs === 0 && !isAllEmpty(court.slots)) court.startTs = Date.now();
+  if (court.startTs !== 0 && isAllEmpty(court.slots)) court.startTs = 0;
+}
+
 // ✅ 修正：人被移走後，如果場地變空，計時要歸零
 function removeEverywhere(next, id) {
   next.bench = next.bench.filter((x) => x !== id);
@@ -155,6 +160,34 @@ function removeEverywhere(next, id) {
       startTs: isAllEmpty(slots) ? 0 : c.startTs,
     };
   });
+}
+
+function locatePlayer(st, id) {
+  if (!id) return null;
+
+  if (st.bench.includes(id)) return { type: "bench" };
+
+  for (let gi = 0; gi < 4; gi++) {
+    for (let si = 0; si < 4; si++) {
+      if (st.queues?.[gi]?.[si] === id) return { type: "queue", gi, si };
+    }
+  }
+
+  for (let ci = 0; ci < 4; ci++) {
+    for (let si = 0; si < 4; si++) {
+      if (st.courts?.[ci]?.slots?.[si] === id) return { type: "court", ci, si };
+    }
+  }
+
+  return null;
+}
+
+function sameFixedSlot(a, b) {
+  if (!a || !b) return false;
+  if (a.type !== b.type) return false;
+  if (a.type === "queue") return a.gi === b.gi && a.si === b.si;
+  if (a.type === "court") return a.ci === b.ci && a.si === b.si;
+  return false;
 }
 
 function formatHMS(totalSeconds) {
@@ -177,7 +210,7 @@ export default function App() {
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
 
-  // ✅ 點選模式：先選人，再點目的地格子放置
+  // ✅ 點選模式：先選人，再點目的地格子放置 / 交換
   const [selectedId, setSelectedId] = useState("");
 
   const [tick, setTick] = useState(nowSec());
@@ -199,7 +232,6 @@ export default function App() {
     return () => clearInterval(t);
   }, []);
 
-  // 如果選到的人被刪了，清掉選取
   useEffect(() => {
     if (selectedId && !state.players[selectedId]) setSelectedId("");
   }, [selectedId, state.players]);
@@ -268,6 +300,9 @@ export default function App() {
     setSelectedId((prev) => (prev === id ? "" : id));
   }
 
+  // ✅ 交換規則：
+  // - 只有「固定格子」(court/queue) <-> 「固定格子」時，點到有人才做交換
+  // - 其他情況（例如從休息區放到有人格子），仍採用「覆蓋，原人回休息」
   function placeSelected(target, id = selectedId) {
     if (!id) return;
 
@@ -275,32 +310,78 @@ export default function App() {
       const next = structuredClone(normalize(prev));
       if (!next.players[id]) return prev;
 
-      // 先把人從任何地方移除
-      removeEverywhere(next, id);
+      const from = locatePlayer(next, id);
 
+      // 放回休息區（不交換）
       if (target.type === "bench") {
+        removeEverywhere(next, id);
         next.bench.unshift(id);
         return next;
       }
 
+      // 取得目標格子目前的人
+      let targetPid = "";
+      if (target.type === "queue") targetPid = next.queues[target.gi][target.si];
+      if (target.type === "court") targetPid = next.courts[target.ci].slots[target.si];
+
+      // 點到自己的同一格：不動作，直接取消選取
+      if (
+        targetPid === id &&
+        from &&
+        (from.type === "queue" || from.type === "court") &&
+        sameFixedSlot(from, target)
+      ) {
+        return prev;
+      }
+
+      const canSwap =
+        targetPid &&
+        targetPid !== id &&
+        from &&
+        (from.type === "queue" || from.type === "court") &&
+        (target.type === "queue" || target.type === "court") &&
+        !sameFixedSlot(from, target);
+
+      if (canSwap) {
+        // 交換：把兩人都清掉，再放回互換位置
+        removeEverywhere(next, id);
+        removeEverywhere(next, targetPid);
+
+        // mover -> target
+        if (target.type === "queue") next.queues[target.gi][target.si] = id;
+        if (target.type === "court") {
+          const c = next.courts[target.ci];
+          c.slots[target.si] = id;
+          ensureCourtTimer(c);
+        }
+
+        // targetPid -> from
+        if (from.type === "queue") next.queues[from.gi][from.si] = targetPid;
+        if (from.type === "court") {
+          const c = next.courts[from.ci];
+          c.slots[from.si] = targetPid;
+          ensureCourtTimer(c);
+        }
+
+        return next;
+      }
+
+      // 不交換：移動 + 若目標有人，被換下者回休息
+      removeEverywhere(next, id);
+
       if (target.type === "queue") {
-        const { gi, si } = target;
-        const replaced = next.queues[gi][si];
-        next.queues[gi][si] = id;
+        const replaced = next.queues[target.gi][target.si];
+        next.queues[target.gi][target.si] = id;
         if (replaced) next.bench.unshift(replaced);
         return next;
       }
 
       if (target.type === "court") {
-        const { ci, si } = target;
-        const court = next.courts[ci];
-        const replaced = court.slots[si];
-        court.slots[si] = id;
+        const court = next.courts[target.ci];
+        const replaced = court.slots[target.si];
+        court.slots[target.si] = id;
         if (replaced) next.bench.unshift(replaced);
-
-        if (court.startTs === 0 && !isAllEmpty(court.slots)) {
-          court.startTs = Date.now();
-        }
+        ensureCourtTimer(court);
         return next;
       }
 
@@ -311,7 +392,7 @@ export default function App() {
   }
 
   function onSlotClick(target, pid) {
-    // 有選人：點格子=放置
+    // 有選人：點格子=放置/交換
     if (selectedId) {
       placeSelected(target);
       return;
@@ -320,7 +401,7 @@ export default function App() {
     if (pid) pickPlayer(pid);
   }
 
-  // ===== Drag & Drop =====
+  // ===== Drag & Drop（同樣支援交換） =====
   function allowDrop(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -340,31 +421,74 @@ export default function App() {
       const next = structuredClone(normalize(prev));
       if (!next.players[id]) return prev;
 
-      removeEverywhere(next, id);
+      const from = locatePlayer(next, id);
 
       if (target.type === "bench") {
+        removeEverywhere(next, id);
         next.bench.unshift(id);
         return next;
       }
 
+      let targetPid = "";
+      if (target.type === "queue") targetPid = next.queues[target.gi][target.si];
+      if (target.type === "court") targetPid = next.courts[target.ci].slots[target.si];
+
+      if (
+        targetPid === id &&
+        from &&
+        (from.type === "queue" || from.type === "court") &&
+        sameFixedSlot(from, target)
+      ) {
+        return prev;
+      }
+
+      const canSwap =
+        targetPid &&
+        targetPid !== id &&
+        from &&
+        (from.type === "queue" || from.type === "court") &&
+        (target.type === "queue" || target.type === "court") &&
+        !sameFixedSlot(from, target);
+
+      if (canSwap) {
+        removeEverywhere(next, id);
+        removeEverywhere(next, targetPid);
+
+        // mover -> target
+        if (target.type === "queue") next.queues[target.gi][target.si] = id;
+        if (target.type === "court") {
+          const c = next.courts[target.ci];
+          c.slots[target.si] = id;
+          ensureCourtTimer(c);
+        }
+
+        // targetPid -> from
+        if (from.type === "queue") next.queues[from.gi][from.si] = targetPid;
+        if (from.type === "court") {
+          const c = next.courts[from.ci];
+          c.slots[from.si] = targetPid;
+          ensureCourtTimer(c);
+        }
+
+        return next;
+      }
+
+      // 不交換：移動 + 目標有人則回休息
+      removeEverywhere(next, id);
+
       if (target.type === "queue") {
-        const { gi, si } = target;
-        const replaced = next.queues[gi][si];
-        next.queues[gi][si] = id;
+        const replaced = next.queues[target.gi][target.si];
+        next.queues[target.gi][target.si] = id;
         if (replaced) next.bench.unshift(replaced);
         return next;
       }
 
       if (target.type === "court") {
-        const { ci, si } = target;
-        const court = next.courts[ci];
-        const replaced = court.slots[si];
-        court.slots[si] = id;
+        const court = next.courts[target.ci];
+        const replaced = court.slots[target.si];
+        court.slots[target.si] = id;
         if (replaced) next.bench.unshift(replaced);
-
-        if (court.startTs === 0 && !isAllEmpty(court.slots)) {
-          court.startTs = Date.now();
-        }
+        ensureCourtTimer(court);
         return next;
       }
 
@@ -433,6 +557,9 @@ export default function App() {
 
       return next;
     });
+
+    // 下場後也清掉選取，避免選到不存在的位置
+    setSelectedId("");
   }
 
   const benchPlayers = useMemo(() => {
@@ -636,34 +763,22 @@ export default function App() {
         <div style={{ flex: 1 }}>
           <h2 style={ui.h2}>早安羽球排點系統</h2>
           <div style={ui.hint}>
-            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜手動拖曳｜點選人→點格子放置｜下場自動補位＋推進
+            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜手動拖曳｜點選人→點格子放置/交換｜下場自動補位＋推進
           </div>
         </div>
-
-        {/* #3：全部重置已隱藏（不顯示按鈕） */}
       </div>
 
       {/* ✅ 點選提示列 */}
       {selectedPlayer ? (
         <div style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 900 }}>
-              已選擇：{selectedPlayer.name}（點目的地格子放置）
+              已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換）
             </div>
             <button style={ui.btnSoft} onClick={() => setSelectedId("")}>
               取消選取
             </button>
-            <button
-              style={ui.btnSoft}
-              onClick={() => placeSelected({ type: "bench" })}
-            >
+            <button style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
               放回休息區
             </button>
           </div>
@@ -711,34 +826,17 @@ export default function App() {
                         }}
                       />
 
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                         <div style={ui.micro}>
                           {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
                         </div>
-                        <button
-                          style={ui.btnDanger}
-                          onClick={() => endCourt(ci)}
-                          disabled={empty}
-                        >
+                        <button style={ui.btnDanger} onClick={() => endCourt(ci)} disabled={empty}>
                           下場
                         </button>
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr",
-                        gap: 8,
-                      }}
-                    >
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
                       {court.slots.map((pid, si) => {
                         const p = pid ? state.players[pid] : null;
                         const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
@@ -776,11 +874,7 @@ export default function App() {
                                 <span style={ui.pill}>{p.gender}</span>
                                 <span style={ui.pill}>次數 {p.games}</span>
                                 <span style={ui.pill}>
-                                  累計{" "}
-                                  {formatHMS(
-                                    p.totalSeconds +
-                                      (playerRunningSeconds[pid] || 0)
-                                  )}
+                                  累計 {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
                                 </span>
                               </div>
                             ) : (
@@ -821,13 +915,7 @@ export default function App() {
                     <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                   </div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr",
-                      gap: 8,
-                    }}
-                  >
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
                     {group.map((pid, si) => {
                       const p = pid ? state.players[pid] : null;
                       const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
@@ -865,11 +953,7 @@ export default function App() {
                               <span style={ui.pill}>{p.gender}</span>
                               <span style={ui.pill}>次數 {p.games}</span>
                               <span style={ui.pill}>
-                                累計{" "}
-                                {formatHMS(
-                                  p.totalSeconds +
-                                    (playerRunningSeconds[pid] || 0)
-                                )}
+                                累計 {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
                               </span>
                             </div>
                           ) : (
@@ -898,17 +982,9 @@ export default function App() {
             </button>
           </div>
 
-          {/* #1：新增隊員功能移到休息區 */}
           {state.ui.showBench ? (
             <>
-              <div
-                style={{
-                  ...ui.card,
-                  padding: 10,
-                  boxShadow: "none",
-                  marginBottom: 10,
-                }}
-              >
+              <div style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
                 <div className="formRow" style={ui.formRow}>
                   <input
                     style={{ ...ui.input, minWidth: 160, flex: 1 }}
@@ -916,11 +992,7 @@ export default function App() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
-                  <select
-                    style={ui.select}
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value)}
-                  >
+                  <select style={ui.select} value={gender} onChange={(e) => setGender(e.target.value)}>
                     <option value="男">男</option>
                     <option value="女">女</option>
                   </select>
@@ -930,7 +1002,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* #4：預設一行兩個人（桌機/平板），手機改一行一個 */}
               <div className="benchList2" style={ui.list2}>
                 {benchPlayers.map((p) => {
                   const running = playerRunningSeconds[p.id] || 0;
@@ -950,24 +1021,13 @@ export default function App() {
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                          }}
-                        >
-                          <span style={{ ...ui.nameStyle, maxWidth: 140 }}>
-                            {p.name}
-                          </span>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <span style={{ ...ui.nameStyle, maxWidth: 140 }}>{p.name}</span>
                           <span style={ui.pill}>{p.gender}</span>
                           <span style={ui.pill}>次數 {p.games}</span>
                           <span style={ui.pill}>累計 {formatHMS(totalShow)}</span>
                         </div>
-                        {running ? (
-                          <div style={ui.micro}>（目前在場：+{formatHMS(running)}）</div>
-                        ) : null}
+                        {running ? <div style={ui.micro}>（目前在場：+{formatHMS(running)}）</div> : null}
                       </div>
 
                       <button
@@ -999,7 +1059,7 @@ export default function App() {
         onMouseDown={() => {
           const timer = setTimeout(async () => {
             const input = prompt("請輸入管理密碼");
-            if (input === null) return; // 使用者取消
+            if (input === null) return;
             const hash = await sha256Hex(input);
             if (hash === ADMIN_HASH) {
               resetAll();
