@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * v1.0.6 + Build time (部署時間)
+ * v1.0.7 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.6";
+const VERSION_NAME = "v1.0.7";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -147,7 +147,7 @@ function ensureCourtTimer(court) {
   if (court.startTs !== 0 && isAllEmpty(court.slots)) court.startTs = 0;
 }
 
-// ✅ 人被移走後，如果場地變空，計時要歸零
+// 人被移走後，如果場地變空，計時要歸零
 function removeEverywhere(next, id) {
   next.bench = next.bench.filter((x) => x !== id);
   next.queues = next.queues.map((g) => g.map((x) => (x === id ? "" : x)));
@@ -210,7 +210,7 @@ export default function App() {
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
 
-  // ✅ 點選模式：先選人，再點目的地格子放置 / 交換
+  // 點選模式：先選人，再點目的地格子放置 / 交換
   const [selectedId, setSelectedId] = useState("");
 
   const [tick, setTick] = useState(nowSec());
@@ -327,13 +327,13 @@ export default function App() {
     return confirm(`要交換「${a}」與「${b}」的位置嗎？`);
   }
 
-  // ✅ 交換規則：
-  // - 只有「固定格子」(court/queue) <-> 「固定格子」時，點到有人才做交換（且需確認）
+  // 交換規則：
+  // - 只有固定格子(court/queue) <-> 固定格子(court/queue) 時，點到有人才做交換（且先確認）
   // - 其他情況：覆蓋，原人回休息
   function placeSelected(target, id = selectedId) {
     if (!id) return;
 
-    // 先在「事件處理」階段做確認（避免 dev strict mode 造成重複 confirm）
+    // 先在事件處理階段做確認（避免在 setState updater 裡 confirm）
     if (target.type === "queue" || target.type === "court") {
       const { canSwap, from, targetPid } = shouldSwap(state, id, target);
 
@@ -349,7 +349,7 @@ export default function App() {
 
       if (canSwap) {
         const ok = confirmSwapUI(id, targetPid);
-        if (!ok) return; // 取消：保持選取，方便再點別格
+        if (!ok) return; // 取消：保持選取
       }
     }
 
@@ -366,7 +366,6 @@ export default function App() {
         return next;
       }
 
-      // 目標目前的人
       const targetPid = getTargetPid(next, target);
 
       // 點到自己的同一格：不動作
@@ -434,17 +433,14 @@ export default function App() {
       return next;
     });
 
-    // 成功執行放置/交換才清掉選取
     setSelectedId("");
   }
 
   function onSlotClick(target, pid) {
-    // 有選人：點格子=放置/交換
     if (selectedId) {
       placeSelected(target);
       return;
     }
-    // 沒選人：點到有人=選取那個人
     if (pid) pickPlayer(pid);
   }
 
@@ -550,7 +546,6 @@ export default function App() {
       return next;
     });
 
-    // 拖曳後清掉點選狀態，避免混淆
     setSelectedId("");
   }
 
@@ -776,6 +771,11 @@ export default function App() {
   };
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
+
+  // GitHub Pages/全域 CSS 可能把控制項文字弄成透明或 font-size=0，這裡強制修正
+  const ctl = "ctlTextFix";
+  const ctlDanger = "ctlTextFixDanger";
+
   const selectedOutline = (pid) =>
     pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none";
 
@@ -806,6 +806,25 @@ export default function App() {
           .grid4 { grid-template-columns: 1fr; }
           .benchList2 { grid-template-columns: 1fr !important; }
         }
+
+        /* ✅ 文字顯示修正：避免被全域 reset / !important 蓋掉 */
+        .ctlTextFix{
+          color: #0F172A !important;
+          -webkit-text-fill-color: #0F172A !important;
+          font-size: 14px !important;
+          line-height: 1.2 !important;
+        }
+        .ctlTextFixDanger{
+          color: #BE123C !important;
+          -webkit-text-fill-color: #BE123C !important;
+          font-size: 14px !important;
+          line-height: 1.2 !important;
+        }
+        .ctlTextFix::placeholder{
+          color: rgba(100,116,139,.9) !important;
+          -webkit-text-fill-color: rgba(100,116,139,.9) !important;
+          opacity: 1 !important;
+        }
       `}</style>
 
       <div className="topBar" style={ui.topBar}>
@@ -823,10 +842,10 @@ export default function App() {
             <div style={{ fontWeight: 900 }}>
               已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換並跳確認）
             </div>
-            <button style={ui.btnSoft} onClick={() => setSelectedId("")}>
+            <button className={ctl} style={ui.btnSoft} onClick={() => setSelectedId("")}>
               取消選取
             </button>
-            <button style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
+            <button className={ctl} style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
               放回休息區
             </button>
           </div>
@@ -838,7 +857,7 @@ export default function App() {
         <div>
           <div style={ui.sectionTitle}>
             <span>上場區（4 面）</span>
-            <button style={ui.btnSoft} onClick={() => toggleSection("courts")}>
+            <button className={ctl} style={ui.btnSoft} onClick={() => toggleSection("courts")}>
               {state.ui.showCourts ? "收折" : "展開"}
             </button>
           </div>
@@ -864,6 +883,7 @@ export default function App() {
                       }}
                     >
                       <input
+                        className={ctl}
                         value={court.name}
                         onChange={(e) => setCourtName(ci, e.target.value)}
                         style={{
@@ -878,7 +898,12 @@ export default function App() {
                         <div style={ui.micro}>
                           {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
                         </div>
-                        <button style={ui.btnDanger} onClick={() => endCourt(ci)} disabled={empty}>
+                        <button
+                          className={ctlDanger}
+                          style={ui.btnDanger}
+                          onClick={() => endCourt(ci)}
+                          disabled={empty}
+                        >
                           下場
                         </button>
                       </div>
@@ -940,7 +965,7 @@ export default function App() {
 
           <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
             <span>排隊區（4 組：順位 1~4）</span>
-            <button style={ui.btnSoft} onClick={() => toggleSection("queues")}>
+            <button className={ctl} style={ui.btnSoft} onClick={() => toggleSection("queues")}>
               {state.ui.showQueues ? "收折" : "展開"}
             </button>
           </div>
@@ -1025,7 +1050,7 @@ export default function App() {
         >
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-            <button style={ui.btnSoft} onClick={() => toggleSection("bench")}>
+            <button className={ctl} style={ui.btnSoft} onClick={() => toggleSection("bench")}>
               {state.ui.showBench ? "收折" : "展開"}
             </button>
           </div>
@@ -1035,16 +1060,22 @@ export default function App() {
               <div style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
                 <div className="formRow" style={ui.formRow}>
                   <input
+                    className={ctl}
                     style={{ ...ui.input, minWidth: 160, flex: 1 }}
                     placeholder="新增隊員姓名"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
-                  <select style={ui.select} value={gender} onChange={(e) => setGender(e.target.value)}>
+                  <select
+                    className={ctl}
+                    style={ui.select}
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                  >
                     <option value="男">男</option>
                     <option value="女">女</option>
                   </select>
-                  <button style={ui.btn} onClick={addPlayer}>
+                  <button className={ctl} style={ui.btn} onClick={addPlayer}>
                     新增
                   </button>
                 </div>
@@ -1079,6 +1110,7 @@ export default function App() {
                       </div>
 
                       <button
+                        className={ctl}
                         style={ui.btn}
                         onClick={(e) => {
                           e.stopPropagation();
