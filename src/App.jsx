@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * v1.0.7 + Build time (部署時間)
+ * v1.0.8 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.7";
+const VERSION_NAME = "v1.0.8";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -292,7 +292,7 @@ export default function App() {
     });
   }
 
-  // ===== 點選模式 helpers =====
+  // ===== 點選/交換 helpers =====
   const selectedPlayer = selectedId ? state.players[selectedId] : null;
 
   function pickPlayer(id) {
@@ -327,9 +327,6 @@ export default function App() {
     return confirm(`要交換「${a}」與「${b}」的位置嗎？`);
   }
 
-  // 交換規則：
-  // - 只有固定格子(court/queue) <-> 固定格子(court/queue) 時，點到有人才做交換（且先確認）
-  // - 其他情況：覆蓋，原人回休息
   function placeSelected(target, id = selectedId) {
     if (!id) return;
 
@@ -772,9 +769,10 @@ export default function App() {
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
 
-  // GitHub Pages/全域 CSS 可能把控制項文字弄成透明或 font-size=0，這裡強制修正
+  // 文字顯示修正（避免 GitHub Pages/全域 CSS 影響）
   const ctl = "ctlTextFix";
   const ctlDanger = "ctlTextFixDanger";
+  const ctlPad = "ctlPadFix";
 
   const selectedOutline = (pid) =>
     pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none";
@@ -807,6 +805,20 @@ export default function App() {
           .benchList2 { grid-template-columns: 1fr !important; }
         }
 
+        /* ✅ iPad Air 橫向（大多落在 1024~1366）UI 緊湊化 + 右側休息區 sticky */
+        @media (min-width: 1024px) and (max-width: 1366px) and (orientation: landscape) {
+          .layout { grid-template-columns: 1.75fr 0.75fr !important; gap: 10px !important; }
+          .grid4 { gap: 8px !important; }
+          .benchSticky { position: sticky; top: 10px; }
+          .cardBox { padding: 8px !important; border-radius: 16px !important; }
+          .benchBox { padding: 8px !important; border-radius: 16px !important; }
+          .slotBox { min-height: 30px !important; padding: 5px 7px !important; }
+          .benchItemBox { padding: 7px 9px !important; }
+          .ctlPadFix { padding: 8px 10px !important; }
+          .ctlTextFix { font-size: 13px !important; }
+          .ctlTextFixDanger { font-size: 13px !important; }
+        }
+
         /* ✅ 文字顯示修正：避免被全域 reset / !important 蓋掉 */
         .ctlTextFix{
           color: #0F172A !important;
@@ -837,15 +849,15 @@ export default function App() {
       </div>
 
       {selectedPlayer ? (
-        <div style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
+        <div className="cardBox" style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 900 }}>
               已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換並跳確認）
             </div>
-            <button className={ctl} style={ui.btnSoft} onClick={() => setSelectedId("")}>
+            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => setSelectedId("")}>
               取消選取
             </button>
-            <button className={ctl} style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
+            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
               放回休息區
             </button>
           </div>
@@ -857,7 +869,11 @@ export default function App() {
         <div>
           <div style={ui.sectionTitle}>
             <span>上場區（4 面）</span>
-            <button className={ctl} style={ui.btnSoft} onClick={() => toggleSection("courts")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("courts")}
+            >
               {state.ui.showCourts ? "收折" : "展開"}
             </button>
           </div>
@@ -871,7 +887,7 @@ export default function App() {
                   : 0;
 
                 return (
-                  <div key={ci} style={ui.card}>
+                  <div key={ci} className="cardBox" style={ui.card}>
                     <div
                       style={{
                         display: "flex",
@@ -883,7 +899,7 @@ export default function App() {
                       }}
                     >
                       <input
-                        className={ctl}
+                        className={`${ctl} ${ctlPad}`}
                         value={court.name}
                         onChange={(e) => setCourtName(ci, e.target.value)}
                         style={{
@@ -899,7 +915,7 @@ export default function App() {
                           {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
                         </div>
                         <button
-                          className={ctlDanger}
+                          className={`${ctlDanger} ${ctlPad}`}
                           style={ui.btnDanger}
                           onClick={() => endCourt(ci)}
                           disabled={empty}
@@ -917,6 +933,7 @@ export default function App() {
                         return (
                           <div
                             key={si}
+                            className="slotBox"
                             style={{
                               ...ui.slot,
                               background: bg,
@@ -965,7 +982,11 @@ export default function App() {
 
           <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
             <span>排隊區（4 組：順位 1~4）</span>
-            <button className={ctl} style={ui.btnSoft} onClick={() => toggleSection("queues")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("queues")}
+            >
               {state.ui.showQueues ? "收折" : "展開"}
             </button>
           </div>
@@ -973,7 +994,7 @@ export default function App() {
           {state.ui.showQueues ? (
             <div className="grid4">
               {state.queues.map((group, gi) => (
-                <div key={gi} style={ui.card}>
+                <div key={gi} className="cardBox" style={ui.card}>
                   <div
                     style={{
                       display: "flex",
@@ -996,6 +1017,7 @@ export default function App() {
                       return (
                         <div
                           key={si}
+                          className="slotBox"
                           style={{
                             ...ui.slot,
                             background: bg,
@@ -1044,30 +1066,35 @@ export default function App() {
 
         {/* Right: bench */}
         <div
+          className="benchBox benchSticky"
           style={ui.benchCard}
           onDragOver={allowDrop}
           onDrop={(e) => dropTo(e, { type: "bench" })}
         >
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-            <button className={ctl} style={ui.btnSoft} onClick={() => toggleSection("bench")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("bench")}
+            >
               {state.ui.showBench ? "收折" : "展開"}
             </button>
           </div>
 
           {state.ui.showBench ? (
             <>
-              <div style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
+              <div className="cardBox" style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
                 <div className="formRow" style={ui.formRow}>
                   <input
-                    className={ctl}
+                    className={`${ctl} ${ctlPad}`}
                     style={{ ...ui.input, minWidth: 160, flex: 1 }}
                     placeholder="新增隊員姓名"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
                   <select
-                    className={ctl}
+                    className={`${ctl} ${ctlPad}`}
                     style={ui.select}
                     value={gender}
                     onChange={(e) => setGender(e.target.value)}
@@ -1075,7 +1102,7 @@ export default function App() {
                     <option value="男">男</option>
                     <option value="女">女</option>
                   </select>
-                  <button className={ctl} style={ui.btn} onClick={addPlayer}>
+                  <button className={`${ctl} ${ctlPad}`} style={ui.btn} onClick={addPlayer}>
                     新增
                   </button>
                 </div>
@@ -1089,6 +1116,7 @@ export default function App() {
                   return (
                     <div
                       key={p.id}
+                      className="benchItemBox"
                       draggable
                       onDragStart={(e) => dragStart(e, p.id)}
                       onClick={() => pickPlayer(p.id)}
@@ -1110,7 +1138,7 @@ export default function App() {
                       </div>
 
                       <button
-                        className={ctl}
+                        className={`${ctl} ${ctlPad}`}
                         style={ui.btn}
                         onClick={(e) => {
                           e.stopPropagation();
