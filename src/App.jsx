@@ -1,6 +1,7 @@
+```jsx
 import React, { useEffect, useMemo, useState } from "react";
 
-const STORAGE_KEY = "badminton_lineup_local_v5";
+const STORAGE_KEY = "badminton_lineup_local_v6_mobile";
 
 function emptySlots(groups, slots) {
   return Array.from({ length: groups }, () =>
@@ -39,14 +40,12 @@ function normalize(st) {
   next.players = next.players || {};
   next.bench = Array.isArray(next.bench) ? next.bench : [];
 
-  // queues 固定 4x4
   const q = Array.isArray(next.queues) ? next.queues : emptySlots(4, 4);
   next.queues = Array.from({ length: 4 }, (_, gi) => {
     const row = q[gi] || [];
     return Array.from({ length: 4 }, (_, si) => row[si] || "");
   });
 
-  // courts 固定 4 面，每面 slots 4 + name
   const c = Array.isArray(next.courts) ? next.courts : base.courts;
   next.courts = Array.from({ length: 4 }, (_, ci) => {
     const court = c[ci] || base.courts[ci];
@@ -58,7 +57,6 @@ function normalize(st) {
     };
   });
 
-  // players 防呆
   for (const id of Object.keys(next.players)) {
     const p = next.players[id];
     next.players[id] = {
@@ -70,7 +68,6 @@ function normalize(st) {
     };
   }
 
-  // bench 去重 + 排除不存在
   const seen = new Set();
   next.bench = next.bench.filter((id) => {
     if (!next.players[id]) return false;
@@ -97,7 +94,7 @@ function uid() {
 }
 
 function genderBg(g) {
-  // 北歐可愛：柔和粉彩
+  // 北歐可愛柔和粉彩
   if (g === "男") return "#DCEBFF"; // 粉藍
   if (g === "女") return "#FFE0EF"; // 粉紅
   return "#EEF2F7";
@@ -192,7 +189,7 @@ export default function App() {
     });
   }
 
-  // ---------- 拖放 ----------
+  // ---------- Drag & Drop ----------
   function allowDrop(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -246,13 +243,16 @@ export default function App() {
     });
   }
 
-  // ---------- 統計：目前在場 runningSeconds（用於顯示累計+這輪） ----------
+  // ---------- Running seconds for players currently on court ----------
   const playerRunningSeconds = useMemo(() => {
-    const map = {}; // id -> runningSeconds
+    const map = {};
     for (let ci = 0; ci < 4; ci++) {
       const court = state.courts[ci];
       if (!court.startTs) continue;
-      const elapsed = Math.max(0, Math.floor((Date.now() - court.startTs) / 1000));
+      const elapsed = Math.max(
+        0,
+        Math.floor((Date.now() - court.startTs) / 1000)
+      );
       for (const pid of court.slots) {
         if (pid) map[pid] = elapsed;
       }
@@ -261,12 +261,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.courts, tick]);
 
-  // ---------- 下場流程（需求 #3 + #8） ----------
-  // 1) 本場名單 -> 休息區
-  // 2) 排隊1 -> 補進本場（不足 4 也照補）
-  // 3) 排隊2/3/4 往前推（2->1, 3->2, 4->3, 4清空）
-  // 4) 重新開始計時（補進來有人就開始；補進來 0 人則 startTs=0）
-  // 5) 累計：本輪在場的每人 games+1、totalSeconds += elapsed
+  // ---------- End court flow ----------
   function endCourt(ci) {
     setState((prev) => {
       const next = structuredClone(normalize(prev));
@@ -279,7 +274,7 @@ export default function App() {
         ? Math.max(0, Math.floor((Date.now() - court.startTs) / 1000))
         : 0;
 
-      // 累計本輪：在場者 games +1、totalSeconds += elapsed
+      // accumulate
       for (const pid of hadPlayers) {
         const p = next.players[pid];
         if (p) {
@@ -288,27 +283,27 @@ export default function App() {
         }
       }
 
-      // 本場回休息區
+      // move to bench
       for (const pid of hadPlayers) next.bench.unshift(pid);
 
-      // 清空本場
+      // clear court
       court.slots = ["", "", "", ""];
       court.startTs = 0;
 
-      // 排隊1補位（有幾個補幾個）
+      // queue1 -> court (even < 4 is fine)
       const q1 = next.queues[0];
       const incoming = q1.filter(Boolean);
       for (let i = 0; i < 4; i++) {
         court.slots[i] = incoming[i] || "";
       }
 
-      // 排隊往前推
+      // shift queues forward
       next.queues[0] = next.queues[1];
       next.queues[1] = next.queues[2];
       next.queues[2] = next.queues[3];
       next.queues[3] = ["", "", "", ""];
 
-      // 重新計時：只要有人就開始
+      // restart time if someone is on court
       court.startTs = isAllEmpty(court.slots) ? 0 : Date.now();
 
       return next;
@@ -320,7 +315,6 @@ export default function App() {
     setState(initialState());
   }
 
-  // ---------- UI ----------
   const benchPlayers = useMemo(() => {
     const q = search.trim();
     const ids = new Set(state.bench);
@@ -330,10 +324,10 @@ export default function App() {
       .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
   }, [state.players, state.bench, search]);
 
-  // ---------- 北歐可愛風 Styles ----------
+  // ----- Nordic cute styles + responsive (mobile-first) -----
   const ui = {
     page: {
-      padding: 16,
+      padding: 14,
       maxWidth: 1480,
       margin: "0 auto",
       fontFamily:
@@ -348,21 +342,10 @@ export default function App() {
       gap: 10,
       flexWrap: "wrap",
       alignItems: "center",
-      marginBottom: 12,
+      marginBottom: 10,
     },
-    h2: { margin: "0 0 8px 0", fontWeight: 900, letterSpacing: 0.2 },
-    hint: { fontSize: 12, color: "#64748B" },
-    layout: {
-      display: "grid",
-      gridTemplateColumns: "1.55fr 0.85fr",
-      gap: 12,
-      alignItems: "start",
-    },
-    leftGrid: {
-      display: "grid",
-      gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-      gap: 10,
-    },
+    h2: { margin: "0 0 6px 0", fontWeight: 900, letterSpacing: 0.2 },
+    hint: { fontSize: 12, color: "#64748B", lineHeight: 1.3 },
     card: {
       border: "1px solid rgba(15,23,42,.08)",
       borderRadius: 18,
@@ -371,10 +354,13 @@ export default function App() {
       padding: 10,
       boxShadow: "0 10px 25px rgba(15,23,42,.05)",
     },
-    sectionTitle: {
-      margin: "10px 0 8px 0",
-      fontWeight: 900,
-      color: "#0F172A",
+    benchCard: {
+      border: "1px solid rgba(15,23,42,.08)",
+      borderRadius: 18,
+      background: "rgba(255,255,255,.82)",
+      backdropFilter: "blur(6px)",
+      padding: 10,
+      boxShadow: "0 10px 25px rgba(15,23,42,.05)",
     },
     formRow: {
       display: "flex",
@@ -386,14 +372,14 @@ export default function App() {
       padding: "10px 12px",
       borderRadius: 14,
       border: "1px solid rgba(15,23,42,.12)",
-      background: "rgba(255,255,255,.9)",
+      background: "rgba(255,255,255,.92)",
       outline: "none",
     },
     select: {
       padding: "10px 12px",
       borderRadius: 14,
       border: "1px solid rgba(15,23,42,.12)",
-      background: "rgba(255,255,255,.9)",
+      background: "rgba(255,255,255,.92)",
       outline: "none",
     },
     btn: {
@@ -409,12 +395,18 @@ export default function App() {
       padding: "10px 12px",
       borderRadius: 14,
       border: "1px solid rgba(244,63,94,.25)",
-      background: "rgba(255,241,242,.9)",
+      background: "rgba(255,241,242,.92)",
       cursor: "pointer",
       fontWeight: 900,
       color: "#BE123C",
       boxShadow: "0 6px 14px rgba(244,63,94,.08)",
     },
+    sectionTitle: {
+      margin: "10px 0 8px 0",
+      fontWeight: 900,
+      color: "#0F172A",
+    },
+    micro: { fontSize: 12, color: "#64748B" },
     titleRow: {
       display: "flex",
       justifyContent: "space-between",
@@ -423,8 +415,7 @@ export default function App() {
       flexWrap: "wrap",
       marginBottom: 8,
     },
-    slotGrid: { display: "grid", gridTemplateColumns: "1fr", gap: 8 },
-    // 需求 #11：名單高度窄一點（minHeight、padding 降低）
+    // 需求 #11：名單高度窄一點
     slot: {
       border: "1px dashed rgba(15,23,42,.18)",
       borderRadius: 14,
@@ -434,7 +425,6 @@ export default function App() {
       justifyContent: "space-between",
       alignItems: "center",
       gap: 8,
-      transition: "transform .08s ease",
     },
     name: {
       fontWeight: 900,
@@ -452,14 +442,6 @@ export default function App() {
       color: "#334155",
       whiteSpace: "nowrap",
     },
-    micro: { fontSize: 12, color: "#64748B" },
-    benchCard: {
-      border: "1px solid rgba(15,23,42,.08)",
-      borderRadius: 16,
-      padding: 10,
-      background: "rgba(255,255,255,.82)",
-      boxShadow: "0 10px 25px rgba(15,23,42,.05)",
-    },
     benchItem: {
       border: "1px solid rgba(15,23,42,.10)",
       borderRadius: 14,
@@ -476,28 +458,63 @@ export default function App() {
 
   return (
     <div style={ui.page}>
-      <div style={ui.topBar}>
+      <style>{`
+        /* ===== Responsive layout (mobile first) ===== */
+        .layout {
+          display: grid;
+          grid-template-columns: 1.55fr 0.85fr;
+          gap: 12px;
+          align-items: start;
+        }
+        .grid4 {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        /* <=1024: single column layout; courts/queues become 2 columns */
+        @media (max-width: 1024px) {
+          .layout { grid-template-columns: 1fr; }
+          .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        /* <=560: stack to 1 column cards; inputs full width (easy tap) */
+        @media (max-width: 560px) {
+          .topBar { flex-direction: column; align-items: stretch; gap: 10px; }
+          .resetBtn { width: 100%; }
+          .formRow input, .formRow select, .formRow button {
+            width: 100%;
+            box-sizing: border-box;
+          }
+          .grid4 { grid-template-columns: 1fr; }
+        }
+      `}</style>
+
+      <div className="topBar" style={ui.topBar}>
         <div style={{ flex: 1 }}>
           <h2 style={ui.h2}>羽球排點板</h2>
           <div style={ui.hint}>
             上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜手動拖曳｜下場自動補位＋推進
           </div>
         </div>
-        <button style={ui.btn} onClick={resetAll}>
+        <button className="resetBtn" style={ui.btn} onClick={resetAll}>
           全部重置
         </button>
       </div>
 
-      {/* 新增 / 搜尋 */}
       <div style={{ ...ui.card, marginBottom: 12 }}>
-        <div style={ui.formRow}>
+        <div className="formRow" style={ui.formRow}>
           <input
             style={{ ...ui.input, minWidth: 220 }}
             placeholder="新增隊員姓名"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <select style={ui.select} value={gender} onChange={(e) => setGender(e.target.value)}>
+          <select
+            style={ui.select}
+            value={gender}
+            onChange={(e) => setGender(e.target.value)}
+          >
             <option value="男">男</option>
             <option value="女">女</option>
           </select>
@@ -514,12 +531,11 @@ export default function App() {
         </div>
       </div>
 
-      <div style={ui.layout}>
-        {/* 左側：上場 4 + 排隊 4 */}
+      <div className="layout">
+        {/* Left: courts + queues */}
         <div>
-          {/* 上場區 */}
           <div style={ui.sectionTitle}>上場區（4 面）</div>
-          <div style={ui.leftGrid}>
+          <div className="grid4">
             {state.courts.map((court, ci) => {
               const empty = isAllEmpty(court.slots);
               const elapsed = court.startTs
@@ -532,26 +548,31 @@ export default function App() {
                     <input
                       value={court.name}
                       onChange={(e) => setCourtName(ci, e.target.value)}
-                      style={{
-                        ...ui.input,
-                        fontWeight: 900,
-                        flex: 1,
-                        minWidth: 140,
-                      }}
+                      style={{ ...ui.input, fontWeight: 900, flex: 1, minWidth: 140 }}
                     />
 
-                    {/* 需求 #13：下場按鈕在上場時間右側 */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <div style={ui.micro}>
                         {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
                       </div>
-                      <button style={ui.btnDanger} onClick={() => endCourt(ci)} disabled={empty}>
+                      <button
+                        style={ui.btnDanger}
+                        onClick={() => endCourt(ci)}
+                        disabled={empty}
+                      >
                         下場
                       </button>
                     </div>
                   </div>
 
-                  <div style={ui.slotGrid}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
                     {court.slots.map((pid, si) => {
                       const p = pid ? state.players[pid] : null;
                       const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
@@ -594,9 +615,10 @@ export default function App() {
             })}
           </div>
 
-          {/* 排隊區 */}
-          <div style={{ ...ui.sectionTitle, marginTop: 14 }}>排隊區（4 組：順位 1~4）</div>
-          <div style={ui.leftGrid}>
+          <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
+            排隊區（4 組：順位 1~4）
+          </div>
+          <div className="grid4">
             {state.queues.map((group, gi) => (
               <div key={gi} style={ui.card}>
                 <div style={ui.titleRow}>
@@ -604,10 +626,11 @@ export default function App() {
                   <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                 </div>
 
-                <div style={ui.slotGrid}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
                   {group.map((pid, si) => {
                     const p = pid ? state.players[pid] : null;
                     const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
+
                     return (
                       <div
                         key={si}
@@ -646,7 +669,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* 右側：休息區 */}
+        {/* Right: bench */}
         <div
           style={ui.benchCard}
           onDragOver={allowDrop}
@@ -670,13 +693,22 @@ export default function App() {
                   style={{ ...ui.benchItem, background: genderBg(p.gender) }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
                       <span style={{ ...ui.name, maxWidth: 160 }}>{p.name}</span>
                       <span style={ui.pill}>{p.gender}</span>
                       <span style={ui.pill}>次數 {p.games}</span>
                       <span style={ui.pill}>累計 {formatHMS(totalShow)}</span>
                     </div>
-                    {running ? <div style={ui.micro}>（目前在場：+{formatHMS(running)}）</div> : null}
+                    {running ? (
+                      <div style={ui.micro}>（目前在場：+{formatHMS(running)}）</div>
+                    ) : null}
                   </div>
 
                   <button style={ui.btn} onClick={() => removePlayer(p.id)}>
@@ -695,3 +727,4 @@ export default function App() {
     </div>
   );
 }
+```
