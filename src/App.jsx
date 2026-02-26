@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * v1.1.0 + Build time (部署時間)
+ * v1.1.1 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.1.0";
+const VERSION_NAME = "v1.1.1";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -59,6 +59,13 @@ function emptySlots(groups, slots) {
   return Array.from({ length: groups }, () =>
     Array.from({ length: slots }, () => "")
   );
+}
+
+// 名字超過 5 個「字元」以 ... 代替（支援中英混合）
+function shortName(name, max = 5) {
+  const arr = Array.from(String(name || ""));
+  if (arr.length <= max) return arr.join("");
+  return arr.slice(0, max).join("") + "...";
 }
 
 function buildDefaultPlayersAndBench() {
@@ -783,7 +790,7 @@ export default function App() {
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
-      maxWidth: 180,
+      maxWidth: 220,
     },
     pill: {
       border: "1px solid rgba(15,23,42,.12)",
@@ -841,7 +848,7 @@ export default function App() {
           .benchList2 { grid-template-columns: 1fr !important; }
         }
 
-        /* ✅ iPad Air 橫向（大多落在 1024~1366）右側休息區 sticky + 緊湊化 */
+        /* iPad Air 橫向（1024~1366）右側休息區 sticky + 緊湊化 */
         @media (min-width: 1024px) and (max-width: 1366px) and (orientation: landscape) {
           .layout { grid-template-columns: 1.75fr 0.75fr !important; gap: 10px !important; }
           .grid4 { gap: 8px !important; }
@@ -855,7 +862,7 @@ export default function App() {
           .ctlTextFixDanger { font-size: 13px !important; }
         }
 
-        /* ✅ 固定高度＋內部可捲動：只捲「名單區」 */
+        /* 固定高度＋內部可捲動：只捲「名單區」 */
         .benchScrollArea{
           max-height: clamp(360px, calc(100vh - 320px), 640px);
           overflow-y: auto;
@@ -864,7 +871,7 @@ export default function App() {
           -webkit-overflow-scrolling: touch;
         }
 
-        /* ✅ 文字顯示修正：避免被全域 reset / !important 蓋掉 */
+        /* 文字顯示修正：避免被全域 reset / !important 蓋掉 */
         .ctlTextFix{
           color: #0F172A !important;
           -webkit-text-fill-color: #0F172A !important;
@@ -977,7 +984,7 @@ export default function App() {
                             style={{
                               ...ui.slot,
                               background: bg,
-                              outline: selectedOutline(pid),
+                              outline: pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
                               outlineOffset: 2,
                             }}
                             onDragOver={allowDrop}
@@ -992,11 +999,17 @@ export default function App() {
                                   e.stopPropagation();
                                   pickPlayer(pid);
                                 }}
-                                style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  minWidth: 0,
+                                  flexWrap: "nowrap",
+                                }}
                               >
-                                <span style={ui.nameStyle}>{p.name}</span>
-                                <span style={ui.pill}>次數 {p.games}</span>
-                                {/* ✅ 不顯示：性別/累積時間 */}
+                                {/* ✅ 名字 + 次數同一行；名字超過5字元顯示...；次數只顯示數字 */}
+                                <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                                <span style={ui.pill}>{p.games}</span>
                               </div>
                             ) : (
                               <EmptySlot />
@@ -1048,7 +1061,7 @@ export default function App() {
                           style={{
                             ...ui.slot,
                             background: bg,
-                            outline: selectedOutline(pid),
+                            outline: pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
                             outlineOffset: 2,
                           }}
                           onDragOver={allowDrop}
@@ -1063,11 +1076,16 @@ export default function App() {
                                 e.stopPropagation();
                                 pickPlayer(pid);
                               }}
-                              style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                minWidth: 0,
+                                flexWrap: "nowrap",
+                              }}
                             >
-                              <span style={ui.nameStyle}>{p.name}</span>
-                              <span style={ui.pill}>次數 {p.games}</span>
-                              {/* ✅ 不顯示：性別/累積時間 */}
+                              <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                              <span style={ui.pill}>{p.games}</span>
                             </div>
                           ) : (
                             <EmptySlot />
@@ -1098,7 +1116,7 @@ export default function App() {
 
           {state.ui.showBench ? (
             <>
-              {/* ✅ 新增區（不捲動，永遠在上方） */}
+              {/* 新增區（不捲動，永遠在上方） */}
               <div className="cardBox" style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
                 <div className="formRow" style={ui.formRow}>
                   <input
@@ -1123,7 +1141,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ✅ 名單區：固定高度＋內部可捲動 */}
+              {/* 名單區：固定高度＋內部可捲動 */}
               <div className="benchScrollArea">
                 <div className="benchList2" style={ui.list2}>
                   {benchPlayers.map((p) => (
@@ -1136,16 +1154,14 @@ export default function App() {
                       style={{
                         ...ui.benchItem,
                         background: genderBg(p.gender),
-                        outline: selectedOutline(p.id),
+                        outline: p.id === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
                         outlineOffset: 2,
                       }}
                     >
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                          <span style={ui.nameStyle}>{p.name}</span>
-                          <span style={ui.pill}>次數 {p.games}</span>
-                          {/* ✅ 不顯示：性別/累積時間 */}
-                        </div>
+                      {/* ✅ 名字 + 次數同一行；名字超過5字元顯示...；次數只顯示數字 */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
+                        <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                        <span style={ui.pill}>{p.games}</span>
                       </div>
 
                       <button
