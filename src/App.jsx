@@ -43,6 +43,7 @@ const DEFAULT_ROSTER = [
   { name: "Yen友3", gender: "男" },
   { name: "Yen友4", gender: "男" },
   { name: "Yen友5", gender: "男" },
+  { name: "竣立", gender: "男" },
   { name: "Shelby.逄", gender: "女" },
 ];
 
@@ -282,7 +283,6 @@ function historyReducer(h, action) {
       const prev = h.present;
       const nextRaw = action.updater ? action.updater(prev) : prev;
 
-      // no-op：沿用你原本的寫法（很多 updater 會 return prev）
       if (!nextRaw || nextRaw === prev) return h;
 
       const next = normalize(nextRaw);
@@ -290,7 +290,7 @@ function historyReducer(h, action) {
       return {
         past: clampStack([...h.past, prev], HISTORY_LIMIT),
         present: next,
-        future: [], // 任何新操作都清空 redo
+        future: [],
       };
     }
 
@@ -310,7 +310,6 @@ function historyReducer(h, action) {
       return { past: newPast, present: nextPresent, future: newFuture };
     }
 
-    // 管理員重置：清空 history
     case "RESET_HARD": {
       return { past: [], present: initialState(), future: [] };
     }
@@ -339,6 +338,46 @@ export default function App() {
   function redo() {
     dispatch({ type: "REDO" });
     setSelectedId("");
+  }
+
+  // ===== Fullscreen =====
+  const [isFullscreen, setIsFullscreen] = useState(
+    typeof document !== "undefined" && !!document.fullscreenElement
+  );
+
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
+  async function toggleFullscreen() {
+    try {
+      const el = document.documentElement;
+
+      // 有些 iPad/Safari 版本可能不支援
+      if (!el.requestFullscreen && !document.exitFullscreen) {
+        alert("此瀏覽器不支援全螢幕模式。");
+        return;
+      }
+
+      if (!document.fullscreenElement) {
+        if (!el.requestFullscreen) {
+          alert("此瀏覽器不支援全螢幕模式。");
+          return;
+        }
+        await el.requestFullscreen();
+      } else {
+        if (!document.exitFullscreen) {
+          alert("此瀏覽器不支援離開全螢幕。");
+          return;
+        }
+        await document.exitFullscreen();
+      }
+    } catch (e) {
+      // iOS 常見：必須由使用者手勢觸發、或被系統限制
+      alert("無法切換全螢幕（可能是 iPad Safari 限制）。");
+    }
   }
 
   // 新增隊員（移到休息區）
@@ -467,11 +506,9 @@ export default function App() {
   function placeSelected(target, id = selectedId) {
     if (!id) return;
 
-    // 先在事件處理階段做確認（避免在 reducer 內 confirm）
     if (target.type === "queue" || target.type === "court") {
       const { canSwap, from, targetPid } = shouldSwap(state, id, target);
 
-      // 點到自己的同一格：不動作
       if (
         targetPid === id &&
         from &&
@@ -483,7 +520,7 @@ export default function App() {
 
       if (canSwap) {
         const ok = confirmSwapUI(id, targetPid);
-        if (!ok) return; // 取消：保持選取
+        if (!ok) return;
       }
     }
 
@@ -493,7 +530,6 @@ export default function App() {
 
       const from = locatePlayer(next, id);
 
-      // 放回休息區（不交換）
       if (target.type === "bench") {
         removeEverywhere(next, id);
         next.bench.unshift(id);
@@ -502,7 +538,6 @@ export default function App() {
 
       const targetPid = getTargetPid(next, target);
 
-      // 點到自己的同一格：不動作
       if (
         targetPid === id &&
         from &&
@@ -525,7 +560,6 @@ export default function App() {
         removeEverywhere(next, id);
         removeEverywhere(next, targetPid);
 
-        // mover -> target
         if (target.type === "queue") next.queues[target.gi][target.si] = id;
         if (target.type === "court") {
           const c = next.courts[target.ci];
@@ -533,7 +567,6 @@ export default function App() {
           ensureCourtTimer(c);
         }
 
-        // targetPid -> from
         if (from.type === "queue") next.queues[from.gi][from.si] = targetPid;
         if (from.type === "court") {
           const c = next.courts[from.ci];
@@ -544,7 +577,6 @@ export default function App() {
         return next;
       }
 
-      // 不交換：移動 + 若目標有人，被換下者回休息
       removeEverywhere(next, id);
 
       if (target.type === "queue") {
@@ -577,7 +609,7 @@ export default function App() {
     if (pid) pickPlayer(pid);
   }
 
-  // ===== Drag & Drop（同樣支援交換 + 交換前確認） =====
+  // ===== Drag & Drop =====
   function allowDrop(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -593,7 +625,6 @@ export default function App() {
     const id = e.dataTransfer.getData("text/plain");
     if (!id) return;
 
-    // 先做確認（避免在 reducer 內 confirm）
     if (target.type === "queue" || target.type === "court") {
       const { canSwap, targetPid } = shouldSwap(state, id, target);
       if (canSwap) {
@@ -638,7 +669,6 @@ export default function App() {
         removeEverywhere(next, id);
         removeEverywhere(next, targetPid);
 
-        // mover -> target
         if (target.type === "queue") next.queues[target.gi][target.si] = id;
         if (target.type === "court") {
           const c = next.courts[target.ci];
@@ -646,7 +676,6 @@ export default function App() {
           ensureCourtTimer(c);
         }
 
-        // targetPid -> from
         if (from.type === "queue") next.queues[from.gi][from.si] = targetPid;
         if (from.type === "court") {
           const c = next.courts[from.ci];
@@ -657,7 +686,6 @@ export default function App() {
         return next;
       }
 
-      // 不交換：移動 + 目標有人則回休息
       removeEverywhere(next, id);
 
       if (target.type === "queue") {
@@ -726,7 +754,6 @@ export default function App() {
     setSelectedId("");
   }
 
-  // 休息區名單：保留 bench 的順序
   const benchPlayers = useMemo(() => {
     return state.bench.map((id) => state.players[id]).filter(Boolean);
   }, [state.players, state.bench]);
@@ -971,7 +998,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* ===== Undo / Redo Buttons ===== */}
+        {/* ===== Undo / Redo / Fullscreen ===== */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button
             className={`${ctl} ${ctlPad}`}
@@ -999,6 +1026,15 @@ export default function App() {
             title="下一步（Redo）"
           >
             下一步
+          </button>
+
+          <button
+            className={`${ctl} ${ctlPad}`}
+            style={ui.btnSoft}
+            onClick={toggleFullscreen}
+            title="全螢幕"
+          >
+            {isFullscreen ? "離開全螢幕" : "全螢幕"}
           </button>
         </div>
       </div>
@@ -1269,7 +1305,7 @@ export default function App() {
           ) : null}
         </div>
 
-        {/* Right: bench（標題列移到卡片外，白底切齊左邊） */}
+        {/* Right: bench */}
         <div className="benchSticky">
           <div style={ui.sectionTitle}>
             <span>休息區</span>
@@ -1290,7 +1326,6 @@ export default function App() {
           >
             {state.ui.showBench ? (
               <>
-                {/* 新增區（不捲動，永遠在上方） */}
                 <div
                   className="cardBox"
                   style={{
@@ -1327,7 +1362,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 名單區：固定高度＋內部可捲動 */}
                 <div className="benchScrollArea">
                   <div className="benchList2" style={ui.list2}>
                     {benchPlayers.map((p) => (
