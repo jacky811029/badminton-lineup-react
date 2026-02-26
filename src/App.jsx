@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * v1.0.9 + Build time (部署時間)
+ * v1.1.0 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.9";
+const VERSION_NAME = "v1.1.0";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -17,6 +17,7 @@ const VERSION_TIME = new Date().toLocaleString("zh-TW", {
 const STORAGE_KEY = "badminton_lineup_local_v8";
 
 // ===== 預設休息區名單（依你提供順序）=====
+// gender 只用來上色（不顯示文字）
 const DEFAULT_ROSTER = [
   { name: "Ian", gender: "男" },
   { name: "竣立", gender: "男" },
@@ -81,7 +82,6 @@ function buildDefaultPlayersAndBench() {
 
 function initialState() {
   const { players, bench } = buildDefaultPlayersAndBench();
-
   return {
     players,
     bench,
@@ -783,7 +783,7 @@ export default function App() {
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
-      maxWidth: 160,
+      maxWidth: 180,
     },
     pill: {
       border: "1px solid rgba(15,23,42,.12)",
@@ -895,14 +895,7 @@ export default function App() {
 
       {selectedPlayer ? (
         <div className="cardBox" style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 900 }}>
               已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換並跳確認）
             </div>
@@ -925,11 +918,7 @@ export default function App() {
         <div>
           <div style={ui.sectionTitle}>
             <span>上場區（4 面）</span>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => toggleSection("courts")}
-            >
+            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("courts")}>
               {state.ui.showCourts ? "收折" : "展開"}
             </button>
           </div>
@@ -958,22 +947,10 @@ export default function App() {
                         className={`${ctl} ${ctlPad}`}
                         value={court.name}
                         onChange={(e) => setCourtName(ci, e.target.value)}
-                        style={{
-                          ...ui.input,
-                          fontWeight: 900,
-                          flex: 1,
-                          minWidth: 140,
-                        }}
+                        style={{ ...ui.input, fontWeight: 900, flex: 1, minWidth: 140 }}
                       />
 
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                         <div style={ui.micro}>
                           {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
                         </div>
@@ -1015,18 +992,11 @@ export default function App() {
                                   e.stopPropagation();
                                   pickPlayer(pid);
                                 }}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  minWidth: 0,
-                                  flexWrap: "wrap",
-                                }}
+                                style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}
                               >
                                 <span style={ui.nameStyle}>{p.name}</span>
-                                <span style={ui.pill}>{p.gender}</span>
                                 <span style={ui.pill}>次數 {p.games}</span>
-                                {/* ✅ 隱藏隊員累積時間（版面更簡潔） */}
+                                {/* ✅ 不顯示：性別/累積時間 */}
                               </div>
                             ) : (
                               <EmptySlot />
@@ -1043,11 +1013,7 @@ export default function App() {
 
           <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
             <span>排隊區（4 組：順位 1~4）</span>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => toggleSection("queues")}
-            >
+            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("queues")}>
               {state.ui.showQueues ? "收折" : "展開"}
             </button>
           </div>
@@ -1097,18 +1063,11 @@ export default function App() {
                                 e.stopPropagation();
                                 pickPlayer(pid);
                               }}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                minWidth: 0,
-                                flexWrap: "wrap",
-                              }}
+                              style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}
                             >
                               <span style={ui.nameStyle}>{p.name}</span>
-                              <span style={ui.pill}>{p.gender}</span>
                               <span style={ui.pill}>次數 {p.games}</span>
-                              {/* ✅ 隱藏隊員累積時間 */}
+                              {/* ✅ 不顯示：性別/累積時間 */}
                             </div>
                           ) : (
                             <EmptySlot />
@@ -1132,11 +1091,7 @@ export default function App() {
         >
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => toggleSection("bench")}
-            >
+            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("bench")}>
               {state.ui.showBench ? "收折" : "展開"}
             </button>
           </div>
@@ -1144,10 +1099,7 @@ export default function App() {
           {state.ui.showBench ? (
             <>
               {/* ✅ 新增區（不捲動，永遠在上方） */}
-              <div
-                className="cardBox"
-                style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}
-              >
+              <div className="cardBox" style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
                 <div className="formRow" style={ui.formRow}>
                   <input
                     className={`${ctl} ${ctlPad}`}
@@ -1189,18 +1141,10 @@ export default function App() {
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                          }}
-                        >
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                           <span style={ui.nameStyle}>{p.name}</span>
-                          <span style={ui.pill}>{p.gender}</span>
                           <span style={ui.pill}>次數 {p.games}</span>
-                          {/* ✅ 隱藏隊員累積時間 */}
+                          {/* ✅ 不顯示：性別/累積時間 */}
                         </div>
                       </div>
 
