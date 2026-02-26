@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 /**
  * v1.0.0 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.3";
+const VERSION_NAME = "v1.0.4";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -138,17 +138,23 @@ function genderBg(g) {
   return "#EEF2F7";
 }
 
+function isAllEmpty(arr) {
+  return arr.every((x) => !x);
+}
+
+// ✅ 修正：人被移走後，如果場地變空，計時要歸零
 function removeEverywhere(next, id) {
   next.bench = next.bench.filter((x) => x !== id);
   next.queues = next.queues.map((g) => g.map((x) => (x === id ? "" : x)));
-  next.courts = next.courts.map((c) => ({
-    ...c,
-    slots: c.slots.map((x) => (x === id ? "" : x)),
-  }));
-}
 
-function isAllEmpty(arr) {
-  return arr.every((x) => !x);
+  next.courts = next.courts.map((c) => {
+    const slots = c.slots.map((x) => (x === id ? "" : x));
+    return {
+      ...c,
+      slots,
+      startTs: isAllEmpty(slots) ? 0 : c.startTs,
+    };
+  });
 }
 
 function formatHMS(totalSeconds) {
@@ -171,16 +177,19 @@ export default function App() {
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
 
+  // ✅ 點選模式：先選人，再點目的地格子放置
+  const [selectedId, setSelectedId] = useState("");
+
   const [tick, setTick] = useState(nowSec());
   const [pressTimer, setPressTimer] = useState(null);
-  const ADMIN_HASH = "f16fac8d88fb50f484b1559cb5f087e5501c4f9c1ccc9f71e123547b18e7b536";
+
+  const ADMIN_HASH =
+    "f16fac8d88fb50f484b1559cb5f087e5501c4f9c1ccc9f71e123547b18e7b536";
 
   function resetAll() {
     setState(initialState());
   }
-  function resetAll() {
-    setState(initialState());
-  }
+
   useEffect(() => {
     saveState(state);
   }, [state]);
@@ -189,6 +198,11 @@ export default function App() {
     const t = setInterval(() => setTick(nowSec()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // 如果選到的人被刪了，清掉選取
+  useEffect(() => {
+    if (selectedId && !state.players[selectedId]) setSelectedId("");
+  }, [selectedId, state.players]);
 
   function addPlayer() {
     const n = name.trim();
@@ -224,6 +238,8 @@ export default function App() {
       delete next.players[id];
       return next;
     });
+
+    if (selectedId === id) setSelectedId("");
   }
 
   function setCourtName(ci, value) {
@@ -244,7 +260,67 @@ export default function App() {
     });
   }
 
-  // Drag & Drop
+  // ===== 點選模式 helpers =====
+  const selectedPlayer = selectedId ? state.players[selectedId] : null;
+
+  function pickPlayer(id) {
+    if (!id) return;
+    setSelectedId((prev) => (prev === id ? "" : id));
+  }
+
+  function placeSelected(target, id = selectedId) {
+    if (!id) return;
+
+    setState((prev) => {
+      const next = structuredClone(normalize(prev));
+      if (!next.players[id]) return prev;
+
+      // 先把人從任何地方移除
+      removeEverywhere(next, id);
+
+      if (target.type === "bench") {
+        next.bench.unshift(id);
+        return next;
+      }
+
+      if (target.type === "queue") {
+        const { gi, si } = target;
+        const replaced = next.queues[gi][si];
+        next.queues[gi][si] = id;
+        if (replaced) next.bench.unshift(replaced);
+        return next;
+      }
+
+      if (target.type === "court") {
+        const { ci, si } = target;
+        const court = next.courts[ci];
+        const replaced = court.slots[si];
+        court.slots[si] = id;
+        if (replaced) next.bench.unshift(replaced);
+
+        if (court.startTs === 0 && !isAllEmpty(court.slots)) {
+          court.startTs = Date.now();
+        }
+        return next;
+      }
+
+      return next;
+    });
+
+    setSelectedId("");
+  }
+
+  function onSlotClick(target, pid) {
+    // 有選人：點格子=放置
+    if (selectedId) {
+      placeSelected(target);
+      return;
+    }
+    // 沒選人：點到有人=選取那個人
+    if (pid) pickPlayer(pid);
+  }
+
+  // ===== Drag & Drop =====
   function allowDrop(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -294,6 +370,9 @@ export default function App() {
 
       return next;
     });
+
+    // 拖曳後清掉點選狀態，避免混淆
+    setSelectedId("");
   }
 
   // Running seconds for players currently on court
@@ -363,7 +442,7 @@ export default function App() {
       .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
   }, [state.players, state.bench]);
 
-  // Styles
+  // ===== Styles =====
   const ui = {
     page: {
       padding: 14,
@@ -400,6 +479,18 @@ export default function App() {
       backdropFilter: "blur(6px)",
       padding: 10,
       boxShadow: "0 10px 25px rgba(15,23,42,.05)",
+    },
+    benchItem: {
+      border: "1px solid rgba(15,23,42,.08)",
+      borderRadius: 14,
+      padding: "8px 10px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 10,
+      boxShadow: "0 6px 14px rgba(15,23,42,.04)",
+      cursor: "pointer",
+      userSelect: "none",
     },
     formRow: {
       display: "flex",
@@ -478,6 +569,8 @@ export default function App() {
       justifyContent: "space-between",
       alignItems: "center",
       gap: 8,
+      cursor: "pointer",
+      userSelect: "none",
     },
     nameStyle: {
       fontWeight: 900,
@@ -505,6 +598,9 @@ export default function App() {
   };
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
+
+  const selectedOutline = (pid) =>
+    pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none";
 
   return (
     <div style={ui.page}>
@@ -538,14 +634,41 @@ export default function App() {
 
       <div className="topBar" style={ui.topBar}>
         <div style={{ flex: 1 }}>
-          <h2 style={ui.h2}>GoodMorning羽球排點系統</h2>
+          <h2 style={ui.h2}>早安羽球排點系統</h2>
           <div style={ui.hint}>
-            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜手動拖曳｜下場自動補位＋推進
+            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜手動拖曳｜點選人→點格子放置｜下場自動補位＋推進
           </div>
         </div>
 
         {/* #3：全部重置已隱藏（不顯示按鈕） */}
       </div>
+
+      {/* ✅ 點選提示列 */}
+      {selectedPlayer ? (
+        <div style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ fontWeight: 900 }}>
+              已選擇：{selectedPlayer.name}（點目的地格子放置）
+            </div>
+            <button style={ui.btnSoft} onClick={() => setSelectedId("")}>
+              取消選取
+            </button>
+            <button
+              style={ui.btnSoft}
+              onClick={() => placeSelected({ type: "bench" })}
+            >
+              放回休息區
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="layout">
         {/* Left: courts + queues */}
@@ -609,7 +732,13 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr",
+                        gap: 8,
+                      }}
+                    >
                       {court.slots.map((pid, si) => {
                         const p = pid ? state.players[pid] : null;
                         const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
@@ -617,14 +746,24 @@ export default function App() {
                         return (
                           <div
                             key={si}
-                            style={{ ...ui.slot, background: bg }}
+                            style={{
+                              ...ui.slot,
+                              background: bg,
+                              outline: selectedOutline(pid),
+                              outlineOffset: 2,
+                            }}
                             onDragOver={allowDrop}
                             onDrop={(e) => dropTo(e, { type: "court", ci, si })}
+                            onClick={() => onSlotClick({ type: "court", ci, si }, pid)}
                           >
                             {p ? (
                               <div
                                 draggable
                                 onDragStart={(e) => dragStart(e, pid)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  pickPlayer(pid);
+                                }}
                                 style={{
                                   display: "flex",
                                   alignItems: "center",
@@ -638,7 +777,10 @@ export default function App() {
                                 <span style={ui.pill}>次數 {p.games}</span>
                                 <span style={ui.pill}>
                                   累計{" "}
-                                  {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
+                                  {formatHMS(
+                                    p.totalSeconds +
+                                      (playerRunningSeconds[pid] || 0)
+                                  )}
                                 </span>
                               </div>
                             ) : (
@@ -679,7 +821,13 @@ export default function App() {
                     <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr",
+                      gap: 8,
+                    }}
+                  >
                     {group.map((pid, si) => {
                       const p = pid ? state.players[pid] : null;
                       const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
@@ -687,14 +835,24 @@ export default function App() {
                       return (
                         <div
                           key={si}
-                          style={{ ...ui.slot, background: bg }}
+                          style={{
+                            ...ui.slot,
+                            background: bg,
+                            outline: selectedOutline(pid),
+                            outlineOffset: 2,
+                          }}
                           onDragOver={allowDrop}
                           onDrop={(e) => dropTo(e, { type: "queue", gi, si })}
+                          onClick={() => onSlotClick({ type: "queue", gi, si }, pid)}
                         >
                           {p ? (
                             <div
                               draggable
                               onDragStart={(e) => dragStart(e, pid)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                pickPlayer(pid);
+                              }}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
@@ -708,7 +866,10 @@ export default function App() {
                               <span style={ui.pill}>次數 {p.games}</span>
                               <span style={ui.pill}>
                                 累計{" "}
-                                {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
+                                {formatHMS(
+                                  p.totalSeconds +
+                                    (playerRunningSeconds[pid] || 0)
+                                )}
                               </span>
                             </div>
                           ) : (
@@ -740,7 +901,14 @@ export default function App() {
           {/* #1：新增隊員功能移到休息區 */}
           {state.ui.showBench ? (
             <>
-              <div style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
+              <div
+                style={{
+                  ...ui.card,
+                  padding: 10,
+                  boxShadow: "none",
+                  marginBottom: 10,
+                }}
+              >
                 <div className="formRow" style={ui.formRow}>
                   <input
                     style={{ ...ui.input, minWidth: 160, flex: 1 }}
@@ -773,7 +941,13 @@ export default function App() {
                       key={p.id}
                       draggable
                       onDragStart={(e) => dragStart(e, p.id)}
-                      style={{ ...ui.benchItem, background: genderBg(p.gender) }}
+                      onClick={() => pickPlayer(p.id)}
+                      style={{
+                        ...ui.benchItem,
+                        background: genderBg(p.gender),
+                        outline: selectedOutline(p.id),
+                        outlineOffset: 2,
+                      }}
                     >
                       <div style={{ minWidth: 0 }}>
                         <div
@@ -784,7 +958,9 @@ export default function App() {
                             alignItems: "center",
                           }}
                         >
-                          <span style={{ ...ui.nameStyle, maxWidth: 140 }}>{p.name}</span>
+                          <span style={{ ...ui.nameStyle, maxWidth: 140 }}>
+                            {p.name}
+                          </span>
                           <span style={ui.pill}>{p.gender}</span>
                           <span style={ui.pill}>次數 {p.games}</span>
                           <span style={ui.pill}>累計 {formatHMS(totalShow)}</span>
@@ -794,7 +970,13 @@ export default function App() {
                         ) : null}
                       </div>
 
-                      <button style={ui.btn} onClick={() => removePlayer(p.id)}>
+                      <button
+                        style={ui.btn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removePlayer(p.id);
+                        }}
+                      >
                         刪
                       </button>
                     </div>
