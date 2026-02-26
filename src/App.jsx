@@ -1,6 +1,15 @@
-```jsx
 import React, { useEffect, useMemo, useState } from "react";
 
+// 版本時間（Build 時間）
+const VERSION = new Date().toLocaleString("zh-TW", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
 const STORAGE_KEY = "badminton_lineup_local_v6_mobile";
 
 function emptySlots(groups, slots) {
@@ -724,7 +733,17 @@ export default function App() {
           </div>
         </div>
       </div>
+      {/* 👇 加在這裡 👇 */}
+      <div
+        style={{
+          marginTop: 24,
+          fontSize: 12,
+          color: "#94A3B8",
+          textAlign: "center",
+        }}
+      >
+        更新時間：{VERSION}
+      </div>
     </div>
   );
 }
-```
