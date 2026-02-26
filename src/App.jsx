@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-// 版本時間（Build 時間）
-const VERSION = new Date().toLocaleString("zh-TW", {
+/**
+ * v1.0.0 + Build time (部署時間)
+ * - 版本號你之後只要改 VERSION_NAME 即可
+ * - VERSION_TIME 會在 build 時固定（GitHub Pages 每次部署會變）
+ */
+const VERSION_NAME = "v1.0.0";
+const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -10,7 +15,8 @@ const VERSION = new Date().toLocaleString("zh-TW", {
   second: "2-digit",
   hour12: false,
 });
-const STORAGE_KEY = "badminton_lineup_local_v6_mobile";
+
+const STORAGE_KEY = "badminton_lineup_local_v7";
 
 function emptySlots(groups, slots) {
   return Array.from({ length: groups }, () =>
@@ -30,6 +36,10 @@ function initialState() {
       slots: ["", "", "", ""],
       startTs: 0,
     })),
+    ui: {
+      showCourts: true,
+      showQueues: true,
+    },
   };
 }
 
@@ -85,6 +95,17 @@ function normalize(st) {
     return true;
   });
 
+  next.ui = {
+    showCourts:
+      typeof next.ui?.showCourts === "boolean"
+        ? next.ui.showCourts
+        : base.ui.showCourts,
+    showQueues:
+      typeof next.ui?.showQueues === "boolean"
+        ? next.ui.showQueues
+        : base.ui.showQueues,
+  };
+
   return next;
 }
 
@@ -103,7 +124,6 @@ function uid() {
 }
 
 function genderBg(g) {
-  // 北歐可愛柔和粉彩
   if (g === "男") return "#DCEBFF"; // 粉藍
   if (g === "女") return "#FFE0EF"; // 粉紅
   return "#EEF2F7";
@@ -140,7 +160,6 @@ export default function App() {
 
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
-  const [search, setSearch] = useState("");
 
   // 動態上場時間（每秒更新）
   const [tick, setTick] = useState(nowSec());
@@ -198,6 +217,15 @@ export default function App() {
     });
   }
 
+  function toggleSection(key) {
+    setState((prev) => {
+      const next = structuredClone(normalize(prev));
+      if (key === "courts") next.ui.showCourts = !next.ui.showCourts;
+      if (key === "queues") next.ui.showQueues = !next.ui.showQueues;
+      return next;
+    });
+  }
+
   // ---------- Drag & Drop ----------
   function allowDrop(e) {
     e.preventDefault();
@@ -241,7 +269,6 @@ export default function App() {
         court.slots[si] = id;
         if (replaced) next.bench.unshift(replaced);
 
-        // 若這面還沒開始且現在有任何人，就開始計時
         if (court.startTs === 0 && !isAllEmpty(court.slots)) {
           court.startTs = Date.now();
         }
@@ -325,13 +352,11 @@ export default function App() {
   }
 
   const benchPlayers = useMemo(() => {
-    const q = search.trim();
     const ids = new Set(state.bench);
     return Object.values(state.players)
       .filter((p) => ids.has(p.id))
-      .filter((p) => (q ? p.name.includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
-  }, [state.players, state.bench, search]);
+  }, [state.players, state.bench]);
 
   // ----- Nordic cute styles + responsive (mobile-first) -----
   const ui = {
@@ -400,6 +425,15 @@ export default function App() {
       fontWeight: 800,
       boxShadow: "0 6px 14px rgba(15,23,42,.06)",
     },
+    btnSoft: {
+      padding: "8px 10px",
+      borderRadius: 14,
+      border: "1px solid rgba(15,23,42,.10)",
+      background: "rgba(255,255,255,.88)",
+      cursor: "pointer",
+      fontWeight: 900,
+      boxShadow: "0 6px 14px rgba(15,23,42,.05)",
+    },
     btnDanger: {
       padding: "10px 12px",
       borderRadius: 14,
@@ -414,6 +448,11 @@ export default function App() {
       margin: "10px 0 8px 0",
       fontWeight: 900,
       color: "#0F172A",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+      flexWrap: "wrap",
     },
     micro: { fontSize: 12, color: "#64748B" },
     titleRow: {
@@ -424,7 +463,6 @@ export default function App() {
       flexWrap: "wrap",
       marginBottom: 8,
     },
-    // 需求 #11：名單高度窄一點
     slot: {
       border: "1px dashed rgba(15,23,42,.18)",
       borderRadius: 14,
@@ -461,6 +499,12 @@ export default function App() {
       gap: 10,
     },
     ghostDot: { opacity: 0, fontSize: 12 },
+    version: {
+      marginTop: 18,
+      fontSize: 12,
+      color: "#94A3B8",
+      textAlign: "center",
+    },
   };
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
@@ -468,7 +512,6 @@ export default function App() {
   return (
     <div style={ui.page}>
       <style>{`
-        /* ===== Responsive layout (mobile first) ===== */
         .layout {
           display: grid;
           grid-template-columns: 1.55fr 0.85fr;
@@ -480,14 +523,10 @@ export default function App() {
           grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 10px;
         }
-
-        /* <=1024: single column layout; courts/queues become 2 columns */
         @media (max-width: 1024px) {
           .layout { grid-template-columns: 1fr; }
           .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
-
-        /* <=560: stack to 1 column cards; inputs full width (easy tap) */
         @media (max-width: 560px) {
           .topBar { flex-direction: column; align-items: stretch; gap: 10px; }
           .resetBtn { width: 100%; }
@@ -511,6 +550,7 @@ export default function App() {
         </button>
       </div>
 
+      {/* 新增（已移除「搜尋休息區」） */}
       <div style={{ ...ui.card, marginBottom: 12 }}>
         <div className="formRow" style={ui.formRow}>
           <input
@@ -530,59 +570,125 @@ export default function App() {
           <button style={ui.btn} onClick={addPlayer}>
             新增
           </button>
-
-          <input
-            style={{ ...ui.input, minWidth: 220 }}
-            placeholder="搜尋休息區"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
         </div>
       </div>
 
       <div className="layout">
         {/* Left: courts + queues */}
         <div>
-          <div style={ui.sectionTitle}>上場區（4 面）</div>
-          <div className="grid4">
-            {state.courts.map((court, ci) => {
-              const empty = isAllEmpty(court.slots);
-              const elapsed = court.startTs
-                ? Math.max(0, Math.floor((Date.now() - court.startTs) / 1000))
-                : 0;
+          <div style={ui.sectionTitle}>
+            <span>上場區（4 面）</span>
+            <button style={ui.btnSoft} onClick={() => toggleSection("courts")}>
+              {state.ui.showCourts ? "收折" : "展開"}
+            </button>
+          </div>
 
-              return (
-                <div key={ci} style={ui.card}>
-                  <div style={ui.titleRow}>
-                    <input
-                      value={court.name}
-                      onChange={(e) => setCourtName(ci, e.target.value)}
-                      style={{ ...ui.input, fontWeight: 900, flex: 1, minWidth: 140 }}
-                    />
+          {state.ui.showCourts ? (
+            <div className="grid4">
+              {state.courts.map((court, ci) => {
+                const empty = isAllEmpty(court.slots);
+                const elapsed = court.startTs
+                  ? Math.max(0, Math.floor((Date.now() - court.startTs) / 1000))
+                  : 0;
 
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <div style={ui.micro}>
-                        {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
-                      </div>
-                      <button
-                        style={ui.btnDanger}
-                        onClick={() => endCourt(ci)}
-                        disabled={empty}
+                return (
+                  <div key={ci} style={ui.card}>
+                    <div style={ui.titleRow}>
+                      <input
+                        value={court.name}
+                        onChange={(e) => setCourtName(ci, e.target.value)}
+                        style={{
+                          ...ui.input,
+                          fontWeight: 900,
+                          flex: 1,
+                          minWidth: 140,
+                        }}
+                      />
+
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
                       >
-                        下場
-                      </button>
+                        <div style={ui.micro}>
+                          {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
+                        </div>
+                        <button
+                          style={ui.btnDanger}
+                          onClick={() => endCourt(ci)}
+                          disabled={empty}
+                        >
+                          下場
+                        </button>
+                      </div>
                     </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                      {court.slots.map((pid, si) => {
+                        const p = pid ? state.players[pid] : null;
+                        const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
+
+                        return (
+                          <div
+                            key={si}
+                            style={{ ...ui.slot, background: bg }}
+                            onDragOver={allowDrop}
+                            onDrop={(e) => dropTo(e, { type: "court", ci, si })}
+                          >
+                            {p ? (
+                              <div
+                                draggable
+                                onDragStart={(e) => dragStart(e, pid)}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  minWidth: 0,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <span style={ui.name}>{p.name}</span>
+                                <span style={ui.pill}>{p.gender}</span>
+                                <span style={ui.pill}>次數 {p.games}</span>
+                                <span style={ui.pill}>
+                                  累計{" "}
+                                  {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
+                                </span>
+                              </div>
+                            ) : (
+                              <EmptySlot />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
+            <span>排隊區（4 組：順位 1~4）</span>
+            <button style={ui.btnSoft} onClick={() => toggleSection("queues")}>
+              {state.ui.showQueues ? "收折" : "展開"}
+            </button>
+          </div>
+
+          {state.ui.showQueues ? (
+            <div className="grid4">
+              {state.queues.map((group, gi) => (
+                <div key={gi} style={ui.card}>
+                  <div style={ui.titleRow}>
+                    <div style={{ fontWeight: 900 }}>排隊 {gi + 1}</div>
+                    <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
-                    {court.slots.map((pid, si) => {
+                    {group.map((pid, si) => {
                       const p = pid ? state.players[pid] : null;
                       const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
 
@@ -591,7 +697,7 @@ export default function App() {
                           key={si}
                           style={{ ...ui.slot, background: bg }}
                           onDragOver={allowDrop}
-                          onDrop={(e) => dropTo(e, { type: "court", ci, si })}
+                          onDrop={(e) => dropTo(e, { type: "queue", gi, si })}
                         >
                           {p ? (
                             <div
@@ -609,7 +715,8 @@ export default function App() {
                               <span style={ui.pill}>{p.gender}</span>
                               <span style={ui.pill}>次數 {p.games}</span>
                               <span style={ui.pill}>
-                                累計 {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
+                                累計{" "}
+                                {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
                               </span>
                             </div>
                           ) : (
@@ -620,62 +727,9 @@ export default function App() {
                     })}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-
-          <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
-            排隊區（4 組：順位 1~4）
-          </div>
-          <div className="grid4">
-            {state.queues.map((group, gi) => (
-              <div key={gi} style={ui.card}>
-                <div style={ui.titleRow}>
-                  <div style={{ fontWeight: 900 }}>排隊 {gi + 1}</div>
-                  <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
-                  {group.map((pid, si) => {
-                    const p = pid ? state.players[pid] : null;
-                    const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
-
-                    return (
-                      <div
-                        key={si}
-                        style={{ ...ui.slot, background: bg }}
-                        onDragOver={allowDrop}
-                        onDrop={(e) => dropTo(e, { type: "queue", gi, si })}
-                      >
-                        {p ? (
-                          <div
-                            draggable
-                            onDragStart={(e) => dragStart(e, pid)}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              minWidth: 0,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <span style={ui.name}>{p.name}</span>
-                            <span style={ui.pill}>{p.gender}</span>
-                            <span style={ui.pill}>次數 {p.games}</span>
-                            <span style={ui.pill}>
-                              累計 {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
-                            </span>
-                          </div>
-                        ) : (
-                          <EmptySlot />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {/* Right: bench */}
@@ -733,16 +787,9 @@ export default function App() {
           </div>
         </div>
       </div>
-      {/* 👇 加在這裡 👇 */}
-      <div
-        style={{
-          marginTop: 24,
-          fontSize: 12,
-          color: "#94A3B8",
-          textAlign: "center",
-        }}
-      >
-        更新時間：{VERSION}
+
+      <div style={ui.version}>
+        {VERSION_NAME} · 更新時間：{VERSION_TIME}
       </div>
     </div>
   );
