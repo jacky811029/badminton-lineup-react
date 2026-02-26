@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * v1.1.1 + Build time (部署時間)
+ * v1.1.2 + Build time (部署時間)
  */
 const VERSION_NAME = "v1.1.2";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
@@ -202,7 +202,8 @@ function isAllEmpty(arr) {
 }
 
 function ensureCourtTimer(court) {
-  if (court.startTs === 0 && !isAllEmpty(court.slots)) court.startTs = Date.now();
+  if (court.startTs === 0 && !isAllEmpty(court.slots))
+    court.startTs = Date.now();
   if (court.startTs !== 0 && isAllEmpty(court.slots)) court.startTs = 0;
 }
 
@@ -234,7 +235,8 @@ function locatePlayer(st, id) {
 
   for (let ci = 0; ci < 4; ci++) {
     for (let si = 0; si < 4; si++) {
-      if (st.courts?.[ci]?.slots?.[si] === id) return { type: "court", ci, si };
+      if (st.courts?.[ci]?.slots?.[si] === id)
+        return { type: "court", ci, si };
     }
   }
 
@@ -445,7 +447,6 @@ export default function App() {
         !sameFixedSlot(from, target);
 
       if (canSwap) {
-        // 交換：清掉兩人，再放回互換位置
         removeEverywhere(next, id);
         removeEverywhere(next, targetPid);
 
@@ -765,7 +766,6 @@ export default function App() {
     },
     micro: { fontSize: 12, color: "#64748B" },
 
-    // 休息區一行兩個人（桌機/iPad），手機在 CSS 會改一欄
     list2: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -816,9 +816,6 @@ export default function App() {
   const ctl = "ctlTextFix";
   const ctlDanger = "ctlTextFixDanger";
   const ctlPad = "ctlPadFix";
-
-  const selectedOutline = (pid) =>
-    pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none";
 
   return (
     <div style={ui.page}>
@@ -909,11 +906,7 @@ export default function App() {
             <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => setSelectedId("")}>
               取消選取
             </button>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => placeSelected({ type: "bench" })}
-            >
+            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
               放回休息區
             </button>
           </div>
@@ -940,16 +933,7 @@ export default function App() {
 
                 return (
                   <div key={ci} className="cardBox" style={ui.card}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: 8,
-                        flexWrap: "wrap",
-                        marginBottom: 8,
-                      }}
-                    >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                       <input
                         className={`${ctl} ${ctlPad}`}
                         value={court.name}
@@ -961,12 +945,7 @@ export default function App() {
                         <div style={ui.micro}>
                           {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
                         </div>
-                        <button
-                          className={`${ctlDanger} ${ctlPad}`}
-                          style={ui.btnDanger}
-                          onClick={() => endCourt(ci)}
-                          disabled={empty}
-                        >
+                        <button className={`${ctlDanger} ${ctlPad}`} style={ui.btnDanger} onClick={() => endCourt(ci)} disabled={empty}>
                           下場
                         </button>
                       </div>
@@ -999,15 +978,8 @@ export default function App() {
                                   e.stopPropagation();
                                   pickPlayer(pid);
                                 }}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  minWidth: 0,
-                                  flexWrap: "nowrap",
-                                }}
+                                style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}
                               >
-                                {/* ✅ 名字 + 次數同一行；名字超過5字元顯示...；次數只顯示數字 */}
                                 <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
                                 <span style={ui.pill}>{p.games}</span>
                               </div>
@@ -1035,16 +1007,7 @@ export default function App() {
             <div className="grid4">
               {state.queues.map((group, gi) => (
                 <div key={gi} className="cardBox" style={ui.card}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 8,
-                      flexWrap: "wrap",
-                      marginBottom: 8,
-                    }}
-                  >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                     <div style={{ fontWeight: 900 }}>排隊 {gi + 1}</div>
                     <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                   </div>
@@ -1076,13 +1039,7 @@ export default function App() {
                                 e.stopPropagation();
                                 pickPlayer(pid);
                               }}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                minWidth: 0,
-                                flexWrap: "nowrap",
-                              }}
+                              style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}
                             >
                               <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
                               <span style={ui.pill}>{p.games}</span>
@@ -1102,32 +1059,18 @@ export default function App() {
 
         {/* Right: bench（標題列移到卡片外，白底切齊左邊） */}
         <div className="benchSticky">
-          {/* ✅ 跟左邊一樣：標題列在卡片外 */}
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => toggleSection("bench")}
-            >
+            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("bench")}>
               {state.ui.showBench ? "收折" : "展開"}
             </button>
           </div>
 
-          {/* ✅ 白色底從這張卡片才開始（就會切齊） */}
-          <div
-            className="benchBox"
-            style={ui.benchCard}
-            onDragOver={allowDrop}
-            onDrop={(e) => dropTo(e, { type: "bench" })}
-          >
+          <div className="benchBox" style={ui.benchCard} onDragOver={allowDrop} onDrop={(e) => dropTo(e, { type: "bench" })}>
             {state.ui.showBench ? (
               <>
                 {/* 新增區（不捲動，永遠在上方） */}
-                <div
-                  className="cardBox"
-                  style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}
-                >
+                <div className="cardBox" style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
                   <div className="formRow" style={ui.formRow}>
                     <input
                       className={`${ctl} ${ctlPad}`}
@@ -1136,12 +1079,7 @@ export default function App() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                     />
-                    <select
-                      className={`${ctl} ${ctlPad}`}
-                      style={ui.select}
-                      value={gender}
-                      onChange={(e) => setGender(e.target.value)}
-                    >
+                    <select className={`${ctl} ${ctlPad}`} style={ui.select} value={gender} onChange={(e) => setGender(e.target.value)}>
                       <option value="男">男</option>
                       <option value="女">女</option>
                     </select>
@@ -1197,6 +1135,7 @@ export default function App() {
             )}
           </div>
         </div>
+      </div>
 
       <div
         style={{ ...ui.version, cursor: "pointer", userSelect: "none" }}
