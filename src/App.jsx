@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 /**
  * v1.1.1 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.1.1";
+const VERSION_NAME = "v1.1.2";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -1100,94 +1100,103 @@ export default function App() {
           ) : null}
         </div>
 
-        {/* Right: bench */}
-        <div
-          className="benchBox benchSticky"
-          style={ui.benchCard}
-          onDragOver={allowDrop}
-          onDrop={(e) => dropTo(e, { type: "bench" })}
-        >
+        {/* Right: bench（標題列移到卡片外，白底切齊左邊） */}
+        <div className="benchSticky">
+          {/* ✅ 跟左邊一樣：標題列在卡片外 */}
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("bench")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("bench")}
+            >
               {state.ui.showBench ? "收折" : "展開"}
             </button>
           </div>
 
-          {state.ui.showBench ? (
-            <>
-              {/* 新增區（不捲動，永遠在上方） */}
-              <div className="cardBox" style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
-                <div className="formRow" style={ui.formRow}>
-                  <input
-                    className={`${ctl} ${ctlPad}`}
-                    style={{ ...ui.input, minWidth: 160, flex: 1 }}
-                    placeholder="新增隊員姓名"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                  <select
-                    className={`${ctl} ${ctlPad}`}
-                    style={ui.select}
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value)}
-                  >
-                    <option value="男">男</option>
-                    <option value="女">女</option>
-                  </select>
-                  <button className={`${ctl} ${ctlPad}`} style={ui.btn} onClick={addPlayer}>
-                    新增
-                  </button>
-                </div>
-              </div>
-
-              {/* 名單區：固定高度＋內部可捲動 */}
-              <div className="benchScrollArea">
-                <div className="benchList2" style={ui.list2}>
-                  {benchPlayers.map((p) => (
-                    <div
-                      key={p.id}
-                      className="benchItemBox"
-                      draggable
-                      onDragStart={(e) => dragStart(e, p.id)}
-                      onClick={() => pickPlayer(p.id)}
-                      style={{
-                        ...ui.benchItem,
-                        background: genderBg(p.gender),
-                        outline: p.id === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
-                        outlineOffset: 2,
-                      }}
+          {/* ✅ 白色底從這張卡片才開始（就會切齊） */}
+          <div
+            className="benchBox"
+            style={ui.benchCard}
+            onDragOver={allowDrop}
+            onDrop={(e) => dropTo(e, { type: "bench" })}
+          >
+            {state.ui.showBench ? (
+              <>
+                {/* 新增區（不捲動，永遠在上方） */}
+                <div
+                  className="cardBox"
+                  style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}
+                >
+                  <div className="formRow" style={ui.formRow}>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, minWidth: 160, flex: 1 }}
+                      placeholder="新增隊員姓名"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                    <select
+                      className={`${ctl} ${ctlPad}`}
+                      style={ui.select}
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
                     >
-                      {/* ✅ 名字 + 次數同一行；名字超過5字元顯示...；次數只顯示數字 */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
-                        <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
-                        <span style={ui.pill}>{p.games}</span>
-                      </div>
+                      <option value="男">男</option>
+                      <option value="女">女</option>
+                    </select>
+                    <button className={`${ctl} ${ctlPad}`} style={ui.btn} onClick={addPlayer}>
+                      新增
+                    </button>
+                  </div>
+                </div>
 
-                      <button
-                        className={`${ctl} ${ctlPad}`}
-                        style={ui.btn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removePlayer(p.id);
+                {/* 名單區：固定高度＋內部可捲動 */}
+                <div className="benchScrollArea">
+                  <div className="benchList2" style={ui.list2}>
+                    {benchPlayers.map((p) => (
+                      <div
+                        key={p.id}
+                        className="benchItemBox"
+                        draggable
+                        onDragStart={(e) => dragStart(e, p.id)}
+                        onClick={() => pickPlayer(p.id)}
+                        style={{
+                          ...ui.benchItem,
+                          background: genderBg(p.gender),
+                          outline: p.id && p.id === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                          outlineOffset: 2,
                         }}
                       >
-                        刪
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
+                          <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                          <span style={ui.pill}>{p.games}</span>
+                        </div>
 
-                <div style={{ marginTop: 10, ...ui.micro }}>
-                  下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 → 本場重新計時
+                        <button
+                          className={`${ctl} ${ctlPad}`}
+                          style={ui.btn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removePlayer(p.id);
+                          }}
+                        >
+                          刪
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: 10, ...ui.micro }}>
+                    下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 → 本場重新計時
+                  </div>
                 </div>
-              </div>
-            </>
-          ) : (
-            <div style={ui.micro}>（已收折）</div>
-          )}
+              </>
+            ) : (
+              <div style={ui.micro}>（已收折）</div>
+            )}
+          </div>
         </div>
-      </div>
 
       <div
         style={{ ...ui.version, cursor: "pointer", userSelect: "none" }}
