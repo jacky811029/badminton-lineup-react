@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * v1.0.8 + Build time (部署時間)
+ * v1.0.9 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.8";
+const VERSION_NAME = "v1.0.9";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -15,6 +15,36 @@ const VERSION_TIME = new Date().toLocaleString("zh-TW", {
 });
 
 const STORAGE_KEY = "badminton_lineup_local_v8";
+
+// ===== 預設休息區名單（依你提供順序）=====
+const DEFAULT_ROSTER = [
+  { name: "Ian", gender: "男" },
+  { name: "竣立", gender: "男" },
+  { name: "阿承", gender: "男" },
+  { name: "靜儀", gender: "女" },
+  { name: "阿宏", gender: "男" },
+  { name: "嘉玲", gender: "女" },
+  { name: "小瑋", gender: "男" },
+  { name: "子唐", gender: "女" },
+  { name: "喬納森", gender: "男" },
+  { name: "小樹", gender: "女" },
+  { name: "大衛", gender: "男" },
+  { name: "Henry", gender: "男" },
+  { name: "Jacky", gender: "男" },
+  { name: "俊佑", gender: "男" },
+  { name: "柏鈞", gender: "男" },
+  { name: "修車", gender: "男" },
+  { name: "阿原", gender: "男" },
+  { name: "志民", gender: "男" },
+  { name: "Yen", gender: "女" },
+  { name: "Yen友1", gender: "女" },
+  { name: "Yen友2", gender: "女" },
+  { name: "Yen友3", gender: "男" },
+  { name: "Yen友4", gender: "男" },
+  { name: "Yen友5", gender: "男" },
+  { name: "竣立", gender: "男" },
+  { name: "Shelby.逄", gender: "女" },
+];
 
 async function sha256Hex(s) {
   const enc = new TextEncoder().encode(s);
@@ -30,10 +60,31 @@ function emptySlots(groups, slots) {
   );
 }
 
+function buildDefaultPlayersAndBench() {
+  const players = {};
+  const bench = [];
+
+  DEFAULT_ROSTER.forEach((r, i) => {
+    const id = `d${String(i + 1).padStart(3, "0")}`;
+    players[id] = {
+      id,
+      name: String(r.name || "").trim(),
+      gender: r.gender === "女" ? "女" : "男",
+      games: 0,
+      totalSeconds: 0,
+    };
+    bench.push(id);
+  });
+
+  return { players, bench };
+}
+
 function initialState() {
+  const { players, bench } = buildDefaultPlayersAndBench();
+
   return {
-    players: {},
-    bench: [],
+    players,
+    bench,
     queues: emptySlots(4, 4),
     courts: Array.from({ length: 4 }, (_, i) => ({
       name: `場地 ${i + 1}`,
@@ -92,6 +143,7 @@ function normalize(st) {
     };
   }
 
+  // bench 保留順序（不要排序），去除不存在與重複 id
   const seen = new Set();
   next.bench = next.bench.filter((id) => {
     if (!next.players[id]) return false;
@@ -213,6 +265,7 @@ export default function App() {
   // 點選模式：先選人，再點目的地格子放置 / 交換
   const [selectedId, setSelectedId] = useState("");
 
+  // 只為了每秒重繪（讓「場地上場時間」會跳秒）
   const [tick, setTick] = useState(nowSec());
   const [pressTimer, setPressTimer] = useState(null);
 
@@ -546,24 +599,6 @@ export default function App() {
     setSelectedId("");
   }
 
-  // Running seconds for players currently on court
-  const playerRunningSeconds = useMemo(() => {
-    const map = {};
-    for (let ci = 0; ci < 4; ci++) {
-      const court = state.courts[ci];
-      if (!court.startTs) continue;
-      const elapsed = Math.max(
-        0,
-        Math.floor((Date.now() - court.startTs) / 1000)
-      );
-      for (const pid of court.slots) {
-        if (pid) map[pid] = elapsed;
-      }
-    }
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.courts, tick]);
-
   function endCourt(ci) {
     setState((prev) => {
       const next = structuredClone(normalize(prev));
@@ -608,11 +643,9 @@ export default function App() {
     setSelectedId("");
   }
 
+  // 休息區名單：保留 bench 的順序
   const benchPlayers = useMemo(() => {
-    const ids = new Set(state.bench);
-    return Object.values(state.players)
-      .filter((p) => ids.has(p.id))
-      .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
+    return state.bench.map((id) => state.players[id]).filter(Boolean);
   }, [state.players, state.bench]);
 
   // ===== Styles =====
@@ -724,12 +757,15 @@ export default function App() {
       flexWrap: "wrap",
     },
     micro: { fontSize: 12, color: "#64748B" },
+
+    // 休息區一行兩個人（桌機/iPad），手機在 CSS 會改一欄
     list2: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
       gap: 8,
       alignItems: "stretch",
     },
+
     slot: {
       border: "1px dashed rgba(15,23,42,.18)",
       borderRadius: 14,
@@ -747,7 +783,7 @@ export default function App() {
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
-      maxWidth: 120,
+      maxWidth: 160,
     },
     pill: {
       border: "1px solid rgba(15,23,42,.12)",
@@ -769,7 +805,7 @@ export default function App() {
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
 
-  // 文字顯示修正（避免 GitHub Pages/全域 CSS 影響）
+  // GitHub Pages/全域 CSS 可能把控制項文字弄成透明或 font-size=0，這裡強制修正
   const ctl = "ctlTextFix";
   const ctlDanger = "ctlTextFixDanger";
   const ctlPad = "ctlPadFix";
@@ -805,7 +841,7 @@ export default function App() {
           .benchList2 { grid-template-columns: 1fr !important; }
         }
 
-        /* ✅ iPad Air 橫向（大多落在 1024~1366）UI 緊湊化 + 右側休息區 sticky */
+        /* ✅ iPad Air 橫向（大多落在 1024~1366）右側休息區 sticky + 緊湊化 */
         @media (min-width: 1024px) and (max-width: 1366px) and (orientation: landscape) {
           .layout { grid-template-columns: 1.75fr 0.75fr !important; gap: 10px !important; }
           .grid4 { gap: 8px !important; }
@@ -817,6 +853,15 @@ export default function App() {
           .ctlPadFix { padding: 8px 10px !important; }
           .ctlTextFix { font-size: 13px !important; }
           .ctlTextFixDanger { font-size: 13px !important; }
+        }
+
+        /* ✅ 固定高度＋內部可捲動：只捲「名單區」 */
+        .benchScrollArea{
+          max-height: clamp(360px, calc(100vh - 320px), 640px);
+          overflow-y: auto;
+          padding-right: 6px;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
         }
 
         /* ✅ 文字顯示修正：避免被全域 reset / !important 蓋掉 */
@@ -850,14 +895,25 @@ export default function App() {
 
       {selectedPlayer ? (
         <div className="cardBox" style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
             <div style={{ fontWeight: 900 }}>
               已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換並跳確認）
             </div>
             <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => setSelectedId("")}>
               取消選取
             </button>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => placeSelected({ type: "bench" })}
+            >
               放回休息區
             </button>
           </div>
@@ -910,7 +966,14 @@ export default function App() {
                         }}
                       />
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
                         <div style={ui.micro}>
                           {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
                         </div>
@@ -963,9 +1026,7 @@ export default function App() {
                                 <span style={ui.nameStyle}>{p.name}</span>
                                 <span style={ui.pill}>{p.gender}</span>
                                 <span style={ui.pill}>次數 {p.games}</span>
-                                <span style={ui.pill}>
-                                  累計 {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
-                                </span>
+                                {/* ✅ 隱藏隊員累積時間（版面更簡潔） */}
                               </div>
                             ) : (
                               <EmptySlot />
@@ -1047,9 +1108,7 @@ export default function App() {
                               <span style={ui.nameStyle}>{p.name}</span>
                               <span style={ui.pill}>{p.gender}</span>
                               <span style={ui.pill}>次數 {p.games}</span>
-                              <span style={ui.pill}>
-                                累計 {formatHMS(p.totalSeconds + (playerRunningSeconds[pid] || 0))}
-                              </span>
+                              {/* ✅ 隱藏隊員累積時間 */}
                             </div>
                           ) : (
                             <EmptySlot />
@@ -1084,7 +1143,11 @@ export default function App() {
 
           {state.ui.showBench ? (
             <>
-              <div className="cardBox" style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
+              {/* ✅ 新增區（不捲動，永遠在上方） */}
+              <div
+                className="cardBox"
+                style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}
+              >
                 <div className="formRow" style={ui.formRow}>
                   <input
                     className={`${ctl} ${ctlPad}`}
@@ -1108,12 +1171,10 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="benchList2" style={ui.list2}>
-                {benchPlayers.map((p) => {
-                  const running = playerRunningSeconds[p.id] || 0;
-                  const totalShow = p.totalSeconds + running;
-
-                  return (
+              {/* ✅ 名單區：固定高度＋內部可捲動 */}
+              <div className="benchScrollArea">
+                <div className="benchList2" style={ui.list2}>
+                  {benchPlayers.map((p) => (
                     <div
                       key={p.id}
                       className="benchItemBox"
@@ -1128,13 +1189,19 @@ export default function App() {
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                          <span style={{ ...ui.nameStyle, maxWidth: 140 }}>{p.name}</span>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          <span style={ui.nameStyle}>{p.name}</span>
                           <span style={ui.pill}>{p.gender}</span>
                           <span style={ui.pill}>次數 {p.games}</span>
-                          <span style={ui.pill}>累計 {formatHMS(totalShow)}</span>
+                          {/* ✅ 隱藏隊員累積時間 */}
                         </div>
-                        {running ? <div style={ui.micro}>（目前在場：+{formatHMS(running)}）</div> : null}
                       </div>
 
                       <button
@@ -1148,12 +1215,12 @@ export default function App() {
                         刪
                       </button>
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
 
-              <div style={{ marginTop: 10, ...ui.micro }}>
-                下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 → 本場重新計時
+                <div style={{ marginTop: 10, ...ui.micro }}>
+                  下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 → 本場重新計時
+                </div>
               </div>
             </>
           ) : (
