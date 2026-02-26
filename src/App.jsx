@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 /**
  * v1.0.0 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.2";
+const VERSION_NAME = "v1.0.3";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -15,6 +15,14 @@ const VERSION_TIME = new Date().toLocaleString("zh-TW", {
 });
 
 const STORAGE_KEY = "badminton_lineup_local_v8";
+
+async function sha256Hex(s) {
+  const enc = new TextEncoder().encode(s);
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return [...new Uint8Array(buf)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 function emptySlots(groups, slots) {
   return Array.from({ length: groups }, () =>
@@ -165,7 +173,7 @@ export default function App() {
 
   const [tick, setTick] = useState(nowSec());
   const [pressTimer, setPressTimer] = useState(null);
-  const ADMIN_PASSWORD = "goodmorning"; // ← 你可以改成自己的密碼
+  const ADMIN_HASH = "f16fac8d88fb50f484b1559cb5f087e5501c4f9c1ccc9f71e123547b18e7b536";
 
   function resetAll() {
     setState(initialState());
@@ -807,32 +815,36 @@ export default function App() {
       <div
         style={{ ...ui.version, cursor: "pointer", userSelect: "none" }}
         onMouseDown={() => {
-          const timer = setTimeout(() => {
+          const timer = setTimeout(async () => {
             const input = prompt("請輸入管理密碼");
-            if (input === ADMIN_PASSWORD) {
+            if (input === null) return; // 使用者取消
+            const hash = await sha256Hex(input);
+            if (hash === ADMIN_HASH) {
               resetAll();
               alert("系統已重置");
-            } else if (input !== null) {
+            } else {
               alert("密碼錯誤");
             }
           }, 3000);
           setPressTimer(timer);
         }}
-        onMouseUp={() => clearTimeout(pressTimer)}
-        onMouseLeave={() => clearTimeout(pressTimer)}
+        onMouseUp={() => pressTimer && clearTimeout(pressTimer)}
+        onMouseLeave={() => pressTimer && clearTimeout(pressTimer)}
         onTouchStart={() => {
-          const timer = setTimeout(() => {
+          const timer = setTimeout(async () => {
             const input = prompt("請輸入管理密碼");
-            if (input === ADMIN_PASSWORD) {
+            if (input === null) return;
+            const hash = await sha256Hex(input);
+            if (hash === ADMIN_HASH) {
               resetAll();
               alert("系統已重置");
-            } else if (input !== null) {
+            } else {
               alert("密碼錯誤");
             }
           }, 3000);
           setPressTimer(timer);
         }}
-        onTouchEnd={() => clearTimeout(pressTimer)}
+        onTouchEnd={() => pressTimer && clearTimeout(pressTimer)}
       >
         {VERSION_NAME} · 更新時間：{VERSION_TIME}
       </div>
