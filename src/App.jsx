@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * v1.0.0 + Build time (部署時間)
+ * v1.0.6 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.5";
+const VERSION_NAME = "v1.0.6";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -147,7 +147,7 @@ function ensureCourtTimer(court) {
   if (court.startTs !== 0 && isAllEmpty(court.slots)) court.startTs = 0;
 }
 
-// ✅ 修正：人被移走後，如果場地變空，計時要歸零
+// ✅ 人被移走後，如果場地變空，計時要歸零
 function removeEverywhere(next, id) {
   next.bench = next.bench.filter((x) => x !== id);
   next.queues = next.queues.map((g) => g.map((x) => (x === id ? "" : x)));
@@ -300,11 +300,58 @@ export default function App() {
     setSelectedId((prev) => (prev === id ? "" : id));
   }
 
+  function getTargetPid(st, target) {
+    if (target.type === "queue") return st.queues[target.gi][target.si];
+    if (target.type === "court") return st.courts[target.ci].slots[target.si];
+    return "";
+  }
+
+  function shouldSwap(st, moverId, target) {
+    const from = locatePlayer(st, moverId);
+    const targetPid = getTargetPid(st, target);
+
+    const canSwap =
+      targetPid &&
+      targetPid !== moverId &&
+      from &&
+      (from.type === "queue" || from.type === "court") &&
+      (target.type === "queue" || target.type === "court") &&
+      !sameFixedSlot(from, target);
+
+    return { canSwap: !!canSwap, from, targetPid };
+  }
+
+  function confirmSwapUI(moverId, targetPid) {
+    const a = state.players[moverId]?.name || "（未知）";
+    const b = state.players[targetPid]?.name || "（未知）";
+    return confirm(`要交換「${a}」與「${b}」的位置嗎？`);
+  }
+
   // ✅ 交換規則：
-  // - 只有「固定格子」(court/queue) <-> 「固定格子」時，點到有人才做交換
-  // - 其他情況（例如從休息區放到有人格子），仍採用「覆蓋，原人回休息」
+  // - 只有「固定格子」(court/queue) <-> 「固定格子」時，點到有人才做交換（且需確認）
+  // - 其他情況：覆蓋，原人回休息
   function placeSelected(target, id = selectedId) {
     if (!id) return;
+
+    // 先在「事件處理」階段做確認（避免 dev strict mode 造成重複 confirm）
+    if (target.type === "queue" || target.type === "court") {
+      const { canSwap, from, targetPid } = shouldSwap(state, id, target);
+
+      // 點到自己的同一格：不動作
+      if (
+        targetPid === id &&
+        from &&
+        (from.type === "queue" || from.type === "court") &&
+        sameFixedSlot(from, target)
+      ) {
+        return;
+      }
+
+      if (canSwap) {
+        const ok = confirmSwapUI(id, targetPid);
+        if (!ok) return; // 取消：保持選取，方便再點別格
+      }
+    }
 
     setState((prev) => {
       const next = structuredClone(normalize(prev));
@@ -319,16 +366,15 @@ export default function App() {
         return next;
       }
 
-      // 取得目標格子目前的人
-      let targetPid = "";
-      if (target.type === "queue") targetPid = next.queues[target.gi][target.si];
-      if (target.type === "court") targetPid = next.courts[target.ci].slots[target.si];
+      // 目標目前的人
+      const targetPid = getTargetPid(next, target);
 
-      // 點到自己的同一格：不動作，直接取消選取
+      // 點到自己的同一格：不動作
       if (
         targetPid === id &&
         from &&
         (from.type === "queue" || from.type === "court") &&
+        (target.type === "queue" || target.type === "court") &&
         sameFixedSlot(from, target)
       ) {
         return prev;
@@ -343,7 +389,7 @@ export default function App() {
         !sameFixedSlot(from, target);
 
       if (canSwap) {
-        // 交換：把兩人都清掉，再放回互換位置
+        // 交換：清掉兩人，再放回互換位置
         removeEverywhere(next, id);
         removeEverywhere(next, targetPid);
 
@@ -388,6 +434,7 @@ export default function App() {
       return next;
     });
 
+    // 成功執行放置/交換才清掉選取
     setSelectedId("");
   }
 
@@ -401,7 +448,7 @@ export default function App() {
     if (pid) pickPlayer(pid);
   }
 
-  // ===== Drag & Drop（同樣支援交換） =====
+  // ===== Drag & Drop（同樣支援交換 + 交換前確認） =====
   function allowDrop(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -417,6 +464,15 @@ export default function App() {
     const id = e.dataTransfer.getData("text/plain");
     if (!id) return;
 
+    // 先做確認（避免在 setState updater 裡 confirm）
+    if (target.type === "queue" || target.type === "court") {
+      const { canSwap, targetPid } = shouldSwap(state, id, target);
+      if (canSwap) {
+        const ok = confirmSwapUI(id, targetPid);
+        if (!ok) return;
+      }
+    }
+
     setState((prev) => {
       const next = structuredClone(normalize(prev));
       if (!next.players[id]) return prev;
@@ -429,14 +485,13 @@ export default function App() {
         return next;
       }
 
-      let targetPid = "";
-      if (target.type === "queue") targetPid = next.queues[target.gi][target.si];
-      if (target.type === "court") targetPid = next.courts[target.ci].slots[target.si];
+      const targetPid = getTargetPid(next, target);
 
       if (
         targetPid === id &&
         from &&
         (from.type === "queue" || from.type === "court") &&
+        (target.type === "queue" || target.type === "court") &&
         sameFixedSlot(from, target)
       ) {
         return prev;
@@ -558,7 +613,6 @@ export default function App() {
       return next;
     });
 
-    // 下場後也清掉選取，避免選到不存在的位置
     setSelectedId("");
   }
 
@@ -678,15 +732,12 @@ export default function App() {
       flexWrap: "wrap",
     },
     micro: { fontSize: 12, color: "#64748B" },
-
-    // 一行預設塞兩個人（#4）
     list2: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
       gap: 8,
       alignItems: "stretch",
     },
-
     slot: {
       border: "1px dashed rgba(15,23,42,.18)",
       borderRadius: 14,
@@ -725,7 +776,6 @@ export default function App() {
   };
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
-
   const selectedOutline = (pid) =>
     pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none";
 
@@ -754,7 +804,6 @@ export default function App() {
             box-sizing: border-box;
           }
           .grid4 { grid-template-columns: 1fr; }
-          /* 手機上休息區兩欄會太擠，改一欄 */
           .benchList2 { grid-template-columns: 1fr !important; }
         }
       `}</style>
@@ -763,17 +812,16 @@ export default function App() {
         <div style={{ flex: 1 }}>
           <h2 style={ui.h2}>早安羽球排點系統</h2>
           <div style={ui.hint}>
-            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜手動拖曳｜點選人→點格子放置/交換｜下場自動補位＋推進
+            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或點選人→點格子放置｜固定格互換會先確認｜下場自動補位＋推進
           </div>
         </div>
       </div>
 
-      {/* ✅ 點選提示列 */}
       {selectedPlayer ? (
         <div style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 900 }}>
-              已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換）
+              已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換並跳確認）
             </div>
             <button style={ui.btnSoft} onClick={() => setSelectedId("")}>
               取消選取
