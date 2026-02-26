@@ -984,7 +984,7 @@ export default function App() {
                             style={{
                               ...ui.slot,
                               background: bg,
-                              outline: pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                              outline: pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
                               outlineOffset: 2,
                             }}
                             onDragOver={allowDrop}
@@ -1061,7 +1061,7 @@ export default function App() {
                           style={{
                             ...ui.slot,
                             background: bg,
-                            outline: pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                            outline: pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
                             outlineOffset: 2,
                           }}
                           onDragOver={allowDrop}
