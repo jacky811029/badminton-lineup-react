@@ -2,10 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 
 /**
  * v1.0.0 + Build time (部署時間)
- * - 版本號你之後只要改 VERSION_NAME 即可
- * - VERSION_TIME 會在 build 時固定（GitHub Pages 每次部署會變）
  */
-const VERSION_NAME = "v1.0.0";
+const VERSION_NAME = "v1.0.1";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -16,7 +14,7 @@ const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   hour12: false,
 });
 
-const STORAGE_KEY = "badminton_lineup_local_v7";
+const STORAGE_KEY = "badminton_lineup_local_v8";
 
 function emptySlots(groups, slots) {
   return Array.from({ length: groups }, () =>
@@ -26,11 +24,9 @@ function emptySlots(groups, slots) {
 
 function initialState() {
   return {
-    players: {
-      // [id]: { id, name, gender: "男"|"女", games: 0, totalSeconds: 0 }
-    },
-    bench: [], // [id...]
-    queues: emptySlots(4, 4), // 排隊1~4，每組 4 格
+    players: {},
+    bench: [],
+    queues: emptySlots(4, 4),
     courts: Array.from({ length: 4 }, (_, i) => ({
       name: `場地 ${i + 1}`,
       slots: ["", "", "", ""],
@@ -39,6 +35,7 @@ function initialState() {
     ui: {
       showCourts: true,
       showQueues: true,
+      showBench: true,
     },
   };
 }
@@ -104,6 +101,10 @@ function normalize(st) {
       typeof next.ui?.showQueues === "boolean"
         ? next.ui.showQueues
         : base.ui.showQueues,
+    showBench:
+      typeof next.ui?.showBench === "boolean"
+        ? next.ui.showBench
+        : base.ui.showBench,
   };
 
   return next;
@@ -124,8 +125,8 @@ function uid() {
 }
 
 function genderBg(g) {
-  if (g === "男") return "#DCEBFF"; // 粉藍
-  if (g === "女") return "#FFE0EF"; // 粉紅
+  if (g === "男") return "#DCEBFF";
+  if (g === "女") return "#FFE0EF";
   return "#EEF2F7";
 }
 
@@ -158,10 +159,10 @@ function nowSec() {
 export default function App() {
   const [state, setState] = useState(loadState);
 
+  // 新增隊員（移到休息區）
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
 
-  // 動態上場時間（每秒更新）
   const [tick, setTick] = useState(nowSec());
 
   useEffect(() => {
@@ -222,11 +223,12 @@ export default function App() {
       const next = structuredClone(normalize(prev));
       if (key === "courts") next.ui.showCourts = !next.ui.showCourts;
       if (key === "queues") next.ui.showQueues = !next.ui.showQueues;
+      if (key === "bench") next.ui.showBench = !next.ui.showBench;
       return next;
     });
   }
 
-  // ---------- Drag & Drop ----------
+  // Drag & Drop
   function allowDrop(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -237,7 +239,6 @@ export default function App() {
     e.dataTransfer.effectAllowed = "move";
   }
 
-  // target: {type:"bench"} | {type:"queue", gi, si} | {type:"court", ci, si}
   function dropTo(e, target) {
     e.preventDefault();
     const id = e.dataTransfer.getData("text/plain");
@@ -279,7 +280,7 @@ export default function App() {
     });
   }
 
-  // ---------- Running seconds for players currently on court ----------
+  // Running seconds for players currently on court
   const playerRunningSeconds = useMemo(() => {
     const map = {};
     for (let ci = 0; ci < 4; ci++) {
@@ -297,7 +298,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.courts, tick]);
 
-  // ---------- End court flow ----------
   function endCourt(ci) {
     setState((prev) => {
       const next = structuredClone(normalize(prev));
@@ -310,7 +310,6 @@ export default function App() {
         ? Math.max(0, Math.floor((Date.now() - court.startTs) / 1000))
         : 0;
 
-      // accumulate
       for (const pid of hadPlayers) {
         const p = next.players[pid];
         if (p) {
@@ -319,36 +318,26 @@ export default function App() {
         }
       }
 
-      // move to bench
       for (const pid of hadPlayers) next.bench.unshift(pid);
 
-      // clear court
       court.slots = ["", "", "", ""];
       court.startTs = 0;
 
-      // queue1 -> court (even < 4 is fine)
       const q1 = next.queues[0];
       const incoming = q1.filter(Boolean);
       for (let i = 0; i < 4; i++) {
         court.slots[i] = incoming[i] || "";
       }
 
-      // shift queues forward
       next.queues[0] = next.queues[1];
       next.queues[1] = next.queues[2];
       next.queues[2] = next.queues[3];
       next.queues[3] = ["", "", "", ""];
 
-      // restart time if someone is on court
       court.startTs = isAllEmpty(court.slots) ? 0 : Date.now();
 
       return next;
     });
-  }
-
-  function resetAll() {
-    if (!confirm("要全部清空回到初始狀態嗎？（人員名單也會刪除）")) return;
-    setState(initialState());
   }
 
   const benchPlayers = useMemo(() => {
@@ -358,7 +347,7 @@ export default function App() {
       .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
   }, [state.players, state.bench]);
 
-  // ----- Nordic cute styles + responsive (mobile-first) -----
+  // Styles
   const ui = {
     page: {
       padding: 14,
@@ -455,14 +444,15 @@ export default function App() {
       flexWrap: "wrap",
     },
     micro: { fontSize: 12, color: "#64748B" },
-    titleRow: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
+
+    // 一行預設塞兩個人（#4）
+    list2: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
       gap: 8,
-      flexWrap: "wrap",
-      marginBottom: 8,
+      alignItems: "stretch",
     },
+
     slot: {
       border: "1px dashed rgba(15,23,42,.18)",
       borderRadius: 14,
@@ -473,7 +463,7 @@ export default function App() {
       alignItems: "center",
       gap: 8,
     },
-    name: {
+    nameStyle: {
       fontWeight: 900,
       whiteSpace: "nowrap",
       overflow: "hidden",
@@ -489,22 +479,13 @@ export default function App() {
       color: "#334155",
       whiteSpace: "nowrap",
     },
-    benchItem: {
-      border: "1px solid rgba(15,23,42,.10)",
-      borderRadius: 14,
-      padding: "8px 10px",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 10,
-    },
-    ghostDot: { opacity: 0, fontSize: 12 },
     version: {
       marginTop: 18,
       fontSize: 12,
       color: "#94A3B8",
       textAlign: "center",
     },
+    ghostDot: { opacity: 0, fontSize: 12 },
   };
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
@@ -529,12 +510,13 @@ export default function App() {
         }
         @media (max-width: 560px) {
           .topBar { flex-direction: column; align-items: stretch; gap: 10px; }
-          .resetBtn { width: 100%; }
           .formRow input, .formRow select, .formRow button {
             width: 100%;
             box-sizing: border-box;
           }
           .grid4 { grid-template-columns: 1fr; }
+          /* 手機上休息區兩欄會太擠，改一欄 */
+          .benchList2 { grid-template-columns: 1fr !important; }
         }
       `}</style>
 
@@ -545,32 +527,8 @@ export default function App() {
             上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜手動拖曳｜下場自動補位＋推進
           </div>
         </div>
-        <button className="resetBtn" style={ui.btn} onClick={resetAll}>
-          全部重置
-        </button>
-      </div>
 
-      {/* 新增（已移除「搜尋休息區」） */}
-      <div style={{ ...ui.card, marginBottom: 12 }}>
-        <div className="formRow" style={ui.formRow}>
-          <input
-            style={{ ...ui.input, minWidth: 220 }}
-            placeholder="新增隊員姓名"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <select
-            style={ui.select}
-            value={gender}
-            onChange={(e) => setGender(e.target.value)}
-          >
-            <option value="男">男</option>
-            <option value="女">女</option>
-          </select>
-          <button style={ui.btn} onClick={addPlayer}>
-            新增
-          </button>
-        </div>
+        {/* #3：全部重置已隱藏（不顯示按鈕） */}
       </div>
 
       <div className="layout">
@@ -593,7 +551,16 @@ export default function App() {
 
                 return (
                   <div key={ci} style={ui.card}>
-                    <div style={ui.titleRow}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginBottom: 8,
+                      }}
+                    >
                       <input
                         value={court.name}
                         onChange={(e) => setCourtName(ci, e.target.value)}
@@ -650,7 +617,7 @@ export default function App() {
                                   flexWrap: "wrap",
                                 }}
                               >
-                                <span style={ui.name}>{p.name}</span>
+                                <span style={ui.nameStyle}>{p.name}</span>
                                 <span style={ui.pill}>{p.gender}</span>
                                 <span style={ui.pill}>次數 {p.games}</span>
                                 <span style={ui.pill}>
@@ -682,7 +649,16 @@ export default function App() {
             <div className="grid4">
               {state.queues.map((group, gi) => (
                 <div key={gi} style={ui.card}>
-                  <div style={ui.titleRow}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginBottom: 8,
+                    }}
+                  >
                     <div style={{ fontWeight: 900 }}>排隊 {gi + 1}</div>
                     <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                   </div>
@@ -711,7 +687,7 @@ export default function App() {
                                 flexWrap: "wrap",
                               }}
                             >
-                              <span style={ui.name}>{p.name}</span>
+                              <span style={ui.nameStyle}>{p.name}</span>
                               <span style={ui.pill}>{p.gender}</span>
                               <span style={ui.pill}>次數 {p.games}</span>
                               <span style={ui.pill}>
@@ -738,53 +714,85 @@ export default function App() {
           onDragOver={allowDrop}
           onDrop={(e) => dropTo(e, { type: "bench" })}
         >
-          <div style={ui.titleRow}>
-            <div style={{ fontWeight: 900 }}>休息區</div>
-            <div style={ui.micro}>人數：{state.bench.length}</div>
+          <div style={ui.sectionTitle}>
+            <span>休息區</span>
+            <button style={ui.btnSoft} onClick={() => toggleSection("bench")}>
+              {state.ui.showBench ? "收折" : "展開"}
+            </button>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {benchPlayers.map((p) => {
-              const running = playerRunningSeconds[p.id] || 0;
-              const totalShow = p.totalSeconds + running;
-
-              return (
-                <div
-                  key={p.id}
-                  draggable
-                  onDragStart={(e) => dragStart(e, p.id)}
-                  style={{ ...ui.benchItem, background: genderBg(p.gender) }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                      }}
-                    >
-                      <span style={{ ...ui.name, maxWidth: 160 }}>{p.name}</span>
-                      <span style={ui.pill}>{p.gender}</span>
-                      <span style={ui.pill}>次數 {p.games}</span>
-                      <span style={ui.pill}>累計 {formatHMS(totalShow)}</span>
-                    </div>
-                    {running ? (
-                      <div style={ui.micro}>（目前在場：+{formatHMS(running)}）</div>
-                    ) : null}
-                  </div>
-
-                  <button style={ui.btn} onClick={() => removePlayer(p.id)}>
-                    刪
+          {/* #1：新增隊員功能移到休息區 */}
+          {state.ui.showBench ? (
+            <>
+              <div style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
+                <div className="formRow" style={ui.formRow}>
+                  <input
+                    style={{ ...ui.input, minWidth: 160, flex: 1 }}
+                    placeholder="新增隊員姓名"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                  <select
+                    style={ui.select}
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                  >
+                    <option value="男">男</option>
+                    <option value="女">女</option>
+                  </select>
+                  <button style={ui.btn} onClick={addPlayer}>
+                    新增
                   </button>
                 </div>
-              );
-            })}
-          </div>
+              </div>
 
-          <div style={{ marginTop: 10, ...ui.micro }}>
-            下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 → 本場重新計時
-          </div>
+              {/* #4：預設一行兩個人（桌機/平板），手機改一行一個 */}
+              <div className="benchList2" style={ui.list2}>
+                {benchPlayers.map((p) => {
+                  const running = playerRunningSeconds[p.id] || 0;
+                  const totalShow = p.totalSeconds + running;
+
+                  return (
+                    <div
+                      key={p.id}
+                      draggable
+                      onDragStart={(e) => dragStart(e, p.id)}
+                      style={{ ...ui.benchItem, background: genderBg(p.gender) }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          <span style={{ ...ui.nameStyle, maxWidth: 140 }}>{p.name}</span>
+                          <span style={ui.pill}>{p.gender}</span>
+                          <span style={ui.pill}>次數 {p.games}</span>
+                          <span style={ui.pill}>累計 {formatHMS(totalShow)}</span>
+                        </div>
+                        {running ? (
+                          <div style={ui.micro}>（目前在場：+{formatHMS(running)}）</div>
+                        ) : null}
+                      </div>
+
+                      <button style={ui.btn} onClick={() => removePlayer(p.id)}>
+                        刪
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop: 10, ...ui.micro }}>
+                下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 → 本場重新計時
+              </div>
+            </>
+          ) : (
+            <div style={ui.micro}>（已收折）</div>
+          )}
         </div>
       </div>
 
