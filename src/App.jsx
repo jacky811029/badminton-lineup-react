@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useState } from "react";
 
 /**
  * v1.1.2 + Build time (部署時間)
@@ -43,7 +43,6 @@ const DEFAULT_ROSTER = [
   { name: "Yen友3", gender: "男" },
   { name: "Yen友4", gender: "男" },
   { name: "Yen友5", gender: "男" },
-  { name: "竣立", gender: "男" },
   { name: "Shelby.逄", gender: "女" },
 ];
 
@@ -264,8 +263,83 @@ function nowSec() {
   return Math.floor(Date.now() / 1000);
 }
 
+/** ====== History (Undo/Redo) ====== */
+const HISTORY_LIMIT = 20;
+
+function clampStack(arr, limit = HISTORY_LIMIT) {
+  if (arr.length <= limit) return arr;
+  return arr.slice(arr.length - limit);
+}
+
+function historyInit() {
+  const present = loadState(); // already normalized
+  return { past: [], present, future: [] };
+}
+
+function historyReducer(h, action) {
+  switch (action.type) {
+    case "APPLY": {
+      const prev = h.present;
+      const nextRaw = action.updater ? action.updater(prev) : prev;
+
+      // no-op：沿用你原本的寫法（很多 updater 會 return prev）
+      if (!nextRaw || nextRaw === prev) return h;
+
+      const next = normalize(nextRaw);
+
+      return {
+        past: clampStack([...h.past, prev], HISTORY_LIMIT),
+        present: next,
+        future: [], // 任何新操作都清空 redo
+      };
+    }
+
+    case "UNDO": {
+      if (!h.past.length) return h;
+      const previous = h.past[h.past.length - 1];
+      const newPast = h.past.slice(0, -1);
+      const newFuture = clampStack([h.present, ...h.future], HISTORY_LIMIT);
+      return { past: newPast, present: previous, future: newFuture };
+    }
+
+    case "REDO": {
+      if (!h.future.length) return h;
+      const nextPresent = h.future[0];
+      const newFuture = h.future.slice(1);
+      const newPast = clampStack([...h.past, h.present], HISTORY_LIMIT);
+      return { past: newPast, present: nextPresent, future: newFuture };
+    }
+
+    // 管理員重置：清空 history
+    case "RESET_HARD": {
+      return { past: [], present: initialState(), future: [] };
+    }
+
+    default:
+      return h;
+  }
+}
+
 export default function App() {
-  const [state, setState] = useState(loadState);
+  const [history, dispatch] = useReducer(historyReducer, null, historyInit);
+  const state = history.present;
+
+  const canUndo = history.past.length > 0;
+  const canRedo = history.future.length > 0;
+
+  function applyState(updater) {
+    dispatch({ type: "APPLY", updater });
+  }
+
+  function undo() {
+    dispatch({ type: "UNDO" });
+    setSelectedId("");
+  }
+
+  function redo() {
+    dispatch({ type: "REDO" });
+    setSelectedId("");
+  }
 
   // 新增隊員（移到休息區）
   const [name, setName] = useState("");
@@ -281,8 +355,9 @@ export default function App() {
   const ADMIN_HASH =
     "f16fac8d88fb50f484b1559cb5f087e5501c4f9c1ccc9f71e123547b18e7b536";
 
-  function resetAll() {
-    setState(initialState());
+  function resetAllHard() {
+    dispatch({ type: "RESET_HARD" });
+    setSelectedId("");
   }
 
   useEffect(() => {
@@ -311,7 +386,7 @@ export default function App() {
     const id = uid();
     const p = { id, name: n, gender, games: 0, totalSeconds: 0 };
 
-    setState((prev) => {
+    applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.players[id] = p;
       next.bench.unshift(id);
@@ -326,7 +401,7 @@ export default function App() {
     if (!p) return;
     if (!confirm(`確定刪除「${p.name}」？`)) return;
 
-    setState((prev) => {
+    applyState((prev) => {
       const next = structuredClone(normalize(prev));
       removeEverywhere(next, id);
       delete next.players[id];
@@ -337,7 +412,7 @@ export default function App() {
   }
 
   function setCourtName(ci, value) {
-    setState((prev) => {
+    applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.courts[ci].name = value;
       return next;
@@ -345,7 +420,7 @@ export default function App() {
   }
 
   function toggleSection(key) {
-    setState((prev) => {
+    applyState((prev) => {
       const next = structuredClone(normalize(prev));
       if (key === "courts") next.ui.showCourts = !next.ui.showCourts;
       if (key === "queues") next.ui.showQueues = !next.ui.showQueues;
@@ -392,7 +467,7 @@ export default function App() {
   function placeSelected(target, id = selectedId) {
     if (!id) return;
 
-    // 先在事件處理階段做確認（避免在 setState updater 裡 confirm）
+    // 先在事件處理階段做確認（避免在 reducer 內 confirm）
     if (target.type === "queue" || target.type === "court") {
       const { canSwap, from, targetPid } = shouldSwap(state, id, target);
 
@@ -412,7 +487,7 @@ export default function App() {
       }
     }
 
-    setState((prev) => {
+    applyState((prev) => {
       const next = structuredClone(normalize(prev));
       if (!next.players[id]) return prev;
 
@@ -518,7 +593,7 @@ export default function App() {
     const id = e.dataTransfer.getData("text/plain");
     if (!id) return;
 
-    // 先做確認（避免在 setState updater 裡 confirm）
+    // 先做確認（避免在 reducer 內 confirm）
     if (target.type === "queue" || target.type === "court") {
       const { canSwap, targetPid } = shouldSwap(state, id, target);
       if (canSwap) {
@@ -527,7 +602,7 @@ export default function App() {
       }
     }
 
-    setState((prev) => {
+    applyState((prev) => {
       const next = structuredClone(normalize(prev));
       if (!next.players[id]) return prev;
 
@@ -608,7 +683,7 @@ export default function App() {
   }
 
   function endCourt(ci) {
-    setState((prev) => {
+    applyState((prev) => {
       const next = structuredClone(normalize(prev));
       const court = next.courts[ci];
 
@@ -895,18 +970,68 @@ export default function App() {
             上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或點選人→點格子放置｜固定格互換會先確認｜下場自動補位＋推進
           </div>
         </div>
+
+        {/* ===== Undo / Redo Buttons ===== */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            className={`${ctl} ${ctlPad}`}
+            style={{
+              ...ui.btnSoft,
+              opacity: canUndo ? 1 : 0.45,
+              cursor: canUndo ? "pointer" : "not-allowed",
+            }}
+            disabled={!canUndo}
+            onClick={undo}
+            title="上一步（Undo）"
+          >
+            上一步
+          </button>
+
+          <button
+            className={`${ctl} ${ctlPad}`}
+            style={{
+              ...ui.btnSoft,
+              opacity: canRedo ? 1 : 0.45,
+              cursor: canRedo ? "pointer" : "not-allowed",
+            }}
+            disabled={!canRedo}
+            onClick={redo}
+            title="下一步（Redo）"
+          >
+            下一步
+          </button>
+        </div>
       </div>
 
       {selectedPlayer ? (
-        <div className="cardBox" style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div
+          className="cardBox"
+          style={{ ...ui.card, padding: 10, marginBottom: 10 }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
             <div style={{ fontWeight: 900 }}>
-              已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換並跳確認）
+              已選擇：{selectedPlayer.name}
+              （點目的地格子放置 / 點到有人會交換並跳確認）
             </div>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => setSelectedId("")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => setSelectedId("")}
+            >
               取消選取
             </button>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => placeSelected({ type: "bench" })}
+            >
               放回休息區
             </button>
           </div>
@@ -918,7 +1043,11 @@ export default function App() {
         <div>
           <div style={ui.sectionTitle}>
             <span>上場區（4 面）</span>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("courts")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("courts")}
+            >
               {state.ui.showCourts ? "收折" : "展開"}
             </button>
           </div>
@@ -933,28 +1062,64 @@ export default function App() {
 
                 return (
                   <div key={ci} className="cardBox" style={ui.card}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginBottom: 8,
+                      }}
+                    >
                       <input
                         className={`${ctl} ${ctlPad}`}
                         value={court.name}
                         onChange={(e) => setCourtName(ci, e.target.value)}
-                        style={{ ...ui.input, fontWeight: 900, flex: 1, minWidth: 140 }}
+                        style={{
+                          ...ui.input,
+                          fontWeight: 900,
+                          flex: 1,
+                          minWidth: 140,
+                        }}
                       />
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
                         <div style={ui.micro}>
-                          {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
+                          {court.startTs
+                            ? `上場時間 ${formatHMS(elapsed)}`
+                            : "未開始"}
                         </div>
-                        <button className={`${ctlDanger} ${ctlPad}`} style={ui.btnDanger} onClick={() => endCourt(ci)} disabled={empty}>
+                        <button
+                          className={`${ctlDanger} ${ctlPad}`}
+                          style={ui.btnDanger}
+                          onClick={() => endCourt(ci)}
+                          disabled={empty}
+                        >
                           下場
                         </button>
                       </div>
                     </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr",
+                        gap: 8,
+                      }}
+                    >
                       {court.slots.map((pid, si) => {
                         const p = pid ? state.players[pid] : null;
-                        const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
+                        const bg = p
+                          ? genderBg(p.gender)
+                          : "rgba(248,250,252,.9)";
 
                         return (
                           <div
@@ -963,12 +1128,17 @@ export default function App() {
                             style={{
                               ...ui.slot,
                               background: bg,
-                              outline: pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                              outline:
+                                pid && pid === selectedId
+                                  ? "3px solid rgba(34,197,94,.85)"
+                                  : "none",
                               outlineOffset: 2,
                             }}
                             onDragOver={allowDrop}
                             onDrop={(e) => dropTo(e, { type: "court", ci, si })}
-                            onClick={() => onSlotClick({ type: "court", ci, si }, pid)}
+                            onClick={() =>
+                              onSlotClick({ type: "court", ci, si }, pid)
+                            }
                           >
                             {p ? (
                               <div
@@ -978,9 +1148,17 @@ export default function App() {
                                   e.stopPropagation();
                                   pickPlayer(pid);
                                 }}
-                                style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  minWidth: 0,
+                                  flexWrap: "nowrap",
+                                }}
                               >
-                                <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                                <span style={ui.nameStyle}>
+                                  {shortName(p.name, 5)}
+                                </span>
                                 <span style={ui.pill}>{p.games}</span>
                               </div>
                             ) : (
@@ -998,7 +1176,11 @@ export default function App() {
 
           <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
             <span>排隊區（4 組：順位 1~4）</span>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("queues")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("queues")}
+            >
               {state.ui.showQueues ? "收折" : "展開"}
             </button>
           </div>
@@ -1007,15 +1189,32 @@ export default function App() {
             <div className="grid4">
               {state.queues.map((group, gi) => (
                 <div key={gi} className="cardBox" style={ui.card}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginBottom: 8,
+                    }}
+                  >
                     <div style={{ fontWeight: 900 }}>排隊 {gi + 1}</div>
                     <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr",
+                      gap: 8,
+                    }}
+                  >
                     {group.map((pid, si) => {
                       const p = pid ? state.players[pid] : null;
-                      const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
+                      const bg = p
+                        ? genderBg(p.gender)
+                        : "rgba(248,250,252,.9)";
 
                       return (
                         <div
@@ -1024,12 +1223,17 @@ export default function App() {
                           style={{
                             ...ui.slot,
                             background: bg,
-                            outline: pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                            outline:
+                              pid && pid === selectedId
+                                ? "3px solid rgba(34,197,94,.85)"
+                                : "none",
                             outlineOffset: 2,
                           }}
                           onDragOver={allowDrop}
                           onDrop={(e) => dropTo(e, { type: "queue", gi, si })}
-                          onClick={() => onSlotClick({ type: "queue", gi, si }, pid)}
+                          onClick={() =>
+                            onSlotClick({ type: "queue", gi, si }, pid)
+                          }
                         >
                           {p ? (
                             <div
@@ -1039,9 +1243,17 @@ export default function App() {
                                 e.stopPropagation();
                                 pickPlayer(pid);
                               }}
-                              style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                minWidth: 0,
+                                flexWrap: "nowrap",
+                              }}
                             >
-                              <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                              <span style={ui.nameStyle}>
+                                {shortName(p.name, 5)}
+                              </span>
                               <span style={ui.pill}>{p.games}</span>
                             </div>
                           ) : (
@@ -1061,16 +1273,33 @@ export default function App() {
         <div className="benchSticky">
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("bench")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("bench")}
+            >
               {state.ui.showBench ? "收折" : "展開"}
             </button>
           </div>
 
-          <div className="benchBox" style={ui.benchCard} onDragOver={allowDrop} onDrop={(e) => dropTo(e, { type: "bench" })}>
+          <div
+            className="benchBox"
+            style={ui.benchCard}
+            onDragOver={allowDrop}
+            onDrop={(e) => dropTo(e, { type: "bench" })}
+          >
             {state.ui.showBench ? (
               <>
                 {/* 新增區（不捲動，永遠在上方） */}
-                <div className="cardBox" style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
+                <div
+                  className="cardBox"
+                  style={{
+                    ...ui.card,
+                    padding: 10,
+                    boxShadow: "none",
+                    marginBottom: 10,
+                  }}
+                >
                   <div className="formRow" style={ui.formRow}>
                     <input
                       className={`${ctl} ${ctlPad}`}
@@ -1079,11 +1308,20 @@ export default function App() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                     />
-                    <select className={`${ctl} ${ctlPad}`} style={ui.select} value={gender} onChange={(e) => setGender(e.target.value)}>
+                    <select
+                      className={`${ctl} ${ctlPad}`}
+                      style={ui.select}
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                    >
                       <option value="男">男</option>
                       <option value="女">女</option>
                     </select>
-                    <button className={`${ctl} ${ctlPad}`} style={ui.btn} onClick={addPlayer}>
+                    <button
+                      className={`${ctl} ${ctlPad}`}
+                      style={ui.btn}
+                      onClick={addPlayer}
+                    >
                       新增
                     </button>
                   </div>
@@ -1102,12 +1340,25 @@ export default function App() {
                         style={{
                           ...ui.benchItem,
                           background: genderBg(p.gender),
-                          outline: p.id && p.id === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                          outline:
+                            p.id && p.id === selectedId
+                              ? "3px solid rgba(34,197,94,.85)"
+                              : "none",
                           outlineOffset: 2,
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
-                          <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            minWidth: 0,
+                            flexWrap: "nowrap",
+                          }}
+                        >
+                          <span style={ui.nameStyle}>
+                            {shortName(p.name, 5)}
+                          </span>
                           <span style={ui.pill}>{p.games}</span>
                         </div>
 
@@ -1145,7 +1396,7 @@ export default function App() {
             if (input === null) return;
             const hash = await sha256Hex(input);
             if (hash === ADMIN_HASH) {
-              resetAll();
+              resetAllHard();
               alert("系統已重置");
             } else {
               alert("密碼錯誤");
@@ -1161,7 +1412,7 @@ export default function App() {
             if (input === null) return;
             const hash = await sha256Hex(input);
             if (hash === ADMIN_HASH) {
-              resetAll();
+              resetAllHard();
               alert("系統已重置");
             } else {
               alert("密碼錯誤");
