@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 /**
  * v1.0.0 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.0.1";
+const VERSION_NAME = "v1.0.2";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -164,7 +164,15 @@ export default function App() {
   const [gender, setGender] = useState("男");
 
   const [tick, setTick] = useState(nowSec());
+  const [pressTimer, setPressTimer] = useState(null);
+  const ADMIN_PASSWORD = "goodmorning"; // ← 你可以改成自己的密碼
 
+  function resetAll() {
+    setState(initialState());
+  }
+  function resetAll() {
+    setState(initialState());
+  }
   useEffect(() => {
     saveState(state);
   }, [state]);
@@ -522,7 +530,7 @@ export default function App() {
 
       <div className="topBar" style={ui.topBar}>
         <div style={{ flex: 1 }}>
-          <h2 style={ui.h2}>羽球排點板</h2>
+          <h2 style={ui.h2}>GoodMorning羽球排點系統</h2>
           <div style={ui.hint}>
             上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜手動拖曳｜下場自動補位＋推進
           </div>
@@ -796,7 +804,36 @@ export default function App() {
         </div>
       </div>
 
-      <div style={ui.version}>
+      <div
+        style={{ ...ui.version, cursor: "pointer", userSelect: "none" }}
+        onMouseDown={() => {
+          const timer = setTimeout(() => {
+            const input = prompt("請輸入管理密碼");
+            if (input === ADMIN_PASSWORD) {
+              resetAll();
+              alert("系統已重置");
+            } else if (input !== null) {
+              alert("密碼錯誤");
+            }
+          }, 3000);
+          setPressTimer(timer);
+        }}
+        onMouseUp={() => clearTimeout(pressTimer)}
+        onMouseLeave={() => clearTimeout(pressTimer)}
+        onTouchStart={() => {
+          const timer = setTimeout(() => {
+            const input = prompt("請輸入管理密碼");
+            if (input === ADMIN_PASSWORD) {
+              resetAll();
+              alert("系統已重置");
+            } else if (input !== null) {
+              alert("密碼錯誤");
+            }
+          }, 3000);
+          setPressTimer(timer);
+        }}
+        onTouchEnd={() => clearTimeout(pressTimer)}
+      >
         {VERSION_NAME} · 更新時間：{VERSION_TIME}
       </div>
     </div>
