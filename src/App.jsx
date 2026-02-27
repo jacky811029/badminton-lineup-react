@@ -1339,15 +1339,10 @@ export default function App() {
           </div>
 
           <div style={ui.hint}>
-            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或點選人→點格子放置｜
+            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或<span style={{ color: "#EF4444", fontWeight: 900 }}>點選</span>人 → 點格子放置（建議用點選）｜
             固定格互換會先確認｜下場自動補位＋推進｜各區塊自動依性別/姓名排序
           </div>
 
-          {/* ✅ 說明處把「點選」用紅字呈現 */}
-          <div style={{ ...ui.hint, marginTop: 6 }}>
-            拖曳或<span style={{ color: "#EF4444", fontWeight: 900 }}>點選</span>
-            人 → 點格子放置（iPad 建議用點選）
-          </div>
         </div>
 
         {/* ===== Controls ===== */}
