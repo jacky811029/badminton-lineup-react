@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 /**
  * v1.1.2 + Build time (部署時間)
@@ -16,8 +16,7 @@ const VERSION_TIME = new Date().toLocaleString("zh-TW", {
 
 const STORAGE_KEY = "badminton_lineup_local_v8";
 
-// ===== 預設休息區名單（依你提供順序）=====
-// gender 只用來上色（不顯示文字）
+// ===== 預設休息區名單 =====
 const DEFAULT_ROSTER = [
   { name: "菜脯", gender: "男" },
   { name: "冠皓", gender: "男" },
@@ -64,11 +63,11 @@ function emptySlots(groups, slots) {
   );
 }
 
-// 名字超過 5 個「字元」以 ... 代替（支援中英混合）
-function shortName(name, max = 5) {
+// ✅ 最多 7 個字元，其餘用 …（支援中英混合）
+function shortName(name, max = 7) {
   const arr = Array.from(String(name || ""));
   if (arr.length <= max) return arr.join("");
-  return arr.slice(0, max).join("") + "...";
+  return arr.slice(0, max).join("") + "…";
 }
 
 function buildDefaultPlayersAndBench() {
@@ -157,7 +156,7 @@ function normalize(st) {
     };
   }
 
-  // bench 去除不存在與重複 id（順序之後會由 sort 重新決定）
+  // bench 去除不存在與重複 id（排序由 sortAllBlocks 決定）
   const seen = new Set();
   next.bench = next.bench.filter((id) => {
     if (!next.players[id]) return false;
@@ -219,7 +218,6 @@ function ensureCourtTimer(court) {
   if (court.startTs !== 0 && isAllEmpty(court.slots)) court.startTs = 0;
 }
 
-// 人被移走後，如果場地變空，計時要歸零
 function removeEverywhere(next, id) {
   next.bench = next.bench.filter((x) => x !== id);
   next.queues = next.queues.map((g) => g.map((x) => (x === id ? "" : x)));
@@ -278,9 +276,8 @@ function nowSec() {
 
 /** ===== 依性別→名稱排序（女先男後，空位最後） ===== */
 function genderOrder(g) {
-  return g === "女" ? 0 : 1; // 女先
+  return g === "女" ? 0 : 1;
 }
-
 function comparePlayers(a, b) {
   const ga = genderOrder(a?.gender);
   const gb = genderOrder(b?.gender);
@@ -289,25 +286,20 @@ function comparePlayers(a, b) {
   const nb = String(b?.name ?? "");
   return na.localeCompare(nb, "zh-TW", { numeric: true, sensitivity: "base" });
 }
-
 function sortIdsFilledFirst(ids, players, fixedLen = null) {
   const filled = ids.filter(Boolean).filter((id) => players[id]);
   filled.sort((x, y) => comparePlayers(players[x], players[y]));
   if (fixedLen == null) return filled;
-  const empties = Array.from({ length: Math.max(0, fixedLen - filled.length) }, () => "");
+  const empties = Array.from(
+    { length: Math.max(0, fixedLen - filled.length) },
+    () => ""
+  );
   return [...filled, ...empties].slice(0, fixedLen);
 }
-
 function sortAllBlocks(st) {
   const next = st;
-
-  // bench：整個名單排序
   next.bench = sortIdsFilledFirst(next.bench, next.players, null);
-
-  // queues：每一組 4 格排序（空格最後）
   next.queues = next.queues.map((g) => sortIdsFilledFirst(g, next.players, 4));
-
-  // courts：每一場 4 格排序（空格最後）
   next.courts = next.courts.map((c) => {
     const slots = sortIdsFilledFirst(c.slots, next.players, 4);
     return {
@@ -316,40 +308,32 @@ function sortAllBlocks(st) {
       startTs: isAllEmpty(slots) ? 0 : c.startTs,
     };
   });
-
   return next;
 }
 
 /** ====== History (Undo/Redo) ====== */
 const HISTORY_LIMIT = 20;
-
 function clampStack(arr, limit = HISTORY_LIMIT) {
   if (arr.length <= limit) return arr;
   return arr.slice(arr.length - limit);
 }
-
 function historyInit() {
-  const present = sortAllBlocks(loadState()); // load + normalize already done in loadState()
+  const present = sortAllBlocks(loadState());
   return { past: [], present, future: [] };
 }
-
 function historyReducer(h, action) {
   switch (action.type) {
     case "APPLY": {
       const prev = h.present;
       const nextRaw = action.updater ? action.updater(prev) : prev;
-
       if (!nextRaw || nextRaw === prev) return h;
-
       const next = sortAllBlocks(normalize(nextRaw));
-
       return {
         past: clampStack([...h.past, prev], HISTORY_LIMIT),
         present: next,
         future: [],
       };
     }
-
     case "UNDO": {
       if (!h.past.length) return h;
       const previous = h.past[h.past.length - 1];
@@ -357,7 +341,6 @@ function historyReducer(h, action) {
       const newFuture = clampStack([h.present, ...h.future], HISTORY_LIMIT);
       return { past: newPast, present: previous, future: newFuture };
     }
-
     case "REDO": {
       if (!h.future.length) return h;
       const nextPresent = h.future[0];
@@ -365,14 +348,72 @@ function historyReducer(h, action) {
       const newPast = clampStack([...h.past, h.present], HISTORY_LIMIT);
       return { past: newPast, present: nextPresent, future: newFuture };
     }
-
     case "RESET_HARD": {
       return { past: [], present: initialState(), future: [] };
     }
-
     default:
       return h;
   }
+}
+
+/** ===== 名單匯入/匯出：name/gender 一行一筆 ===== */
+function normalizeGenderText(g) {
+  const s = String(g || "").trim();
+  if (s === "女") return "女";
+  if (s === "男") return "男";
+  // 允許使用者輸入 F/M、female/male（簡單支援）
+  const low = s.toLowerCase();
+  if (low === "f" || low === "female") return "女";
+  if (low === "m" || low === "male") return "男";
+  return "男";
+}
+function parseRosterText(text) {
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const rows = [];
+  for (const line of lines) {
+    const parts = line.split(/[\/／]/).map((x) => x.trim());
+    const name = parts[0] || "";
+    if (!name) continue;
+    const gender = normalizeGenderText(parts[1] || "");
+    rows.push({ name, gender });
+  }
+  return rows;
+}
+function rosterToText(playersMap) {
+  const arr = Object.values(playersMap || {});
+  arr.sort((a, b) => comparePlayers(a, b));
+  return arr.map((p) => `${p.name}/${p.gender}`).join("\n");
+}
+function buildPlayersFromRosterRows(rows) {
+  const players = {};
+  const bench = [];
+
+  const nameCount = new Map();
+  rows.forEach((r, idx) => {
+    const baseName = String(r.name || "").trim();
+    if (!baseName) return;
+
+    const c = (nameCount.get(baseName) || 0) + 1;
+    nameCount.set(baseName, c);
+    const name = c === 1 ? baseName : `${baseName}(${c})`;
+
+    const id = `i${String(idx + 1).padStart(3, "0")}_${uid()}`;
+    players[id] = {
+      id,
+      name,
+      gender: r.gender === "女" ? "女" : "男",
+      games: 0,
+      totalSeconds: 0,
+    };
+    bench.push(id);
+  });
+
+  return { players, bench };
 }
 
 export default function App() {
@@ -386,27 +427,15 @@ export default function App() {
     dispatch({ type: "APPLY", updater });
   }
 
-  function undo() {
-    dispatch({ type: "UNDO" });
-    setSelectedId("");
-  }
-
-  function redo() {
-    dispatch({ type: "REDO" });
-    setSelectedId("");
-  }
-
   // ===== Fullscreen =====
   const [isFullscreen, setIsFullscreen] = useState(
     typeof document !== "undefined" && !!document.fullscreenElement
   );
-
   useEffect(() => {
     const onFs = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
-
   async function toggleFullscreen() {
     try {
       const el = document.documentElement;
@@ -427,21 +456,20 @@ export default function App() {
         }
         await document.exitFullscreen();
       }
-    } catch (e) {
+    } catch {
       alert("無法切換全螢幕（可能是 iPad Safari 限制）。");
     }
   }
 
-  // 新增隊員（移到休息區）
+  // ===== 基本 UI state =====
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
-
-  // 點選模式：先選人，再點目的地格子放置 / 交換
   const [selectedId, setSelectedId] = useState("");
-
-  // 只為了每秒重繪（讓「場地上場時間」會跳秒）
   const [tick, setTick] = useState(nowSec());
-  const [pressTimer, setPressTimer] = useState(null);
+
+  // ===== 長按（重置 / 費用設定）=====
+  const resetPressTimerRef = useRef(null);
+  const feePressTimerRef = useRef(null);
 
   const ADMIN_HASH =
     "f16fac8d88fb50f484b1559cb5f087e5501c4f9c1ccc9f71e123547b18e7b536";
@@ -464,6 +492,78 @@ export default function App() {
     if (selectedId && !state.players[selectedId]) setSelectedId("");
   }, [selectedId, state.players]);
 
+  // ===== 名單匯入/匯出 modal =====
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [rosterText, setRosterText] = useState("");
+
+  function openRosterModal() {
+    setRosterOpen(true);
+    setRosterText(rosterToText(state.players));
+  }
+
+  function doExportRoster() {
+    setRosterText(rosterToText(state.players));
+  }
+
+  function doImportRoster() {
+    const rows = parseRosterText(rosterText);
+    if (!rows.length) {
+      alert("沒有可匯入的資料（請用：名字/性別，一行一筆）。");
+      return;
+    }
+
+    const ok = confirm(
+      `確定要匯入名單嗎？\n將會覆蓋目前名單並重置上場/排隊（共 ${rows.length} 人）。`
+    );
+    if (!ok) return;
+
+    applyState((prev) => {
+      const base = structuredClone(normalize(prev));
+
+      const { players, bench } = buildPlayersFromRosterRows(rows);
+      base.players = players;
+      base.bench = bench;
+
+      // 重置位置（保留場地名稱、UI、費用設定）
+      base.queues = emptySlots(4, 4);
+      base.courts = base.courts.map((c, i) => ({
+        name: c?.name || `場地 ${i + 1}`,
+        slots: ["", "", "", ""],
+        startTs: 0,
+      }));
+
+      return base;
+    });
+
+    setSelectedId("");
+    alert("匯入完成（已重置上場/排隊）。");
+  }
+
+  // ===== 費用設定：長按 3 秒 =====
+  function startFeePress() {
+    if (feePressTimerRef.current) clearTimeout(feePressTimerRef.current);
+    feePressTimerRef.current = setTimeout(() => {
+      const fee = prompt("請輸入臨打費用（例如：150）", state.config?.feeText || "");
+      if (fee === null) return;
+      const payTo = prompt("請輸入繳費給（例如：阿宏）", state.config?.payTo || "");
+      if (payTo === null) return;
+
+      applyState((prev) => {
+        const next = structuredClone(normalize(prev));
+        next.config.feeText = String(fee);
+        next.config.payTo = String(payTo);
+        return next;
+      });
+    }, 3000);
+  }
+  function cancelFeePress() {
+    if (feePressTimerRef.current) {
+      clearTimeout(feePressTimerRef.current);
+      feePressTimerRef.current = null;
+    }
+  }
+
+  // ===== 人員操作 =====
   function addPlayer() {
     const n = name.trim();
     if (!n) return;
@@ -516,22 +616,6 @@ export default function App() {
       if (key === "courts") next.ui.showCourts = !next.ui.showCourts;
       if (key === "queues") next.ui.showQueues = !next.ui.showQueues;
       if (key === "bench") next.ui.showBench = !next.ui.showBench;
-      return next;
-    });
-  }
-
-  function setFeeText(v) {
-    applyState((prev) => {
-      const next = structuredClone(normalize(prev));
-      next.config.feeText = v;
-      return next;
-    });
-  }
-
-  function setPayTo(v) {
-    applyState((prev) => {
-      const next = structuredClone(normalize(prev));
-      next.config.payTo = v;
       return next;
     });
   }
@@ -822,7 +906,7 @@ export default function App() {
     setSelectedId("");
   }
 
-  // 休息區名單（state 內已排序）
+  // ===== 顯示資料 =====
   const benchPlayers = useMemo(() => {
     return state.bench.map((id) => state.players[id]).filter(Boolean);
   }, [state.players, state.bench]);
@@ -830,6 +914,15 @@ export default function App() {
   const totalPeople = useMemo(() => {
     return Object.keys(state.players || {}).length;
   }, [state.players]);
+
+  const feeLine = useMemo(() => {
+    const fee = (state.config?.feeText || "").trim();
+    const payTo = (state.config?.payTo || "").trim();
+    if (!fee && !payTo) return "";
+    if (fee && payTo) return `臨打費用$${fee}，繳費給: ${payTo}`;
+    if (fee && !payTo) return `臨打費用$${fee}`;
+    return `繳費給: ${payTo}`;
+  }, [state.config?.feeText, state.config?.payTo]);
 
   // ===== Styles =====
   const ui = {
@@ -940,14 +1033,12 @@ export default function App() {
       flexWrap: "wrap",
     },
     micro: { fontSize: 12, color: "#64748B" },
-
     list2: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
       gap: 8,
       alignItems: "stretch",
     },
-
     slot: {
       border: "1px dashed rgba(15,23,42,.18)",
       borderRadius: 14,
@@ -983,7 +1074,6 @@ export default function App() {
       textAlign: "center",
     },
     ghostDot: { opacity: 0, fontSize: 12 },
-
     badge: {
       display: "inline-flex",
       alignItems: "center",
@@ -996,6 +1086,40 @@ export default function App() {
       color: "#334155",
       whiteSpace: "nowrap",
       fontWeight: 900,
+      userSelect: "none",
+    },
+    modalMask: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(15,23,42,.35)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 14,
+      zIndex: 9999,
+    },
+    modal: {
+      width: "min(920px, 100%)",
+      borderRadius: 18,
+      background: "rgba(255,255,255,.95)",
+      border: "1px solid rgba(15,23,42,.12)",
+      boxShadow: "0 18px 50px rgba(15,23,42,.22)",
+      padding: 12,
+    },
+    textarea: {
+      width: "100%",
+      minHeight: 320,
+      resize: "vertical",
+      borderRadius: 14,
+      border: "1px solid rgba(15,23,42,.12)",
+      padding: 12,
+      outline: "none",
+      fontFamily:
+        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+      fontSize: 13,
+      lineHeight: 1.4,
+      background: "rgba(248,250,252,.95)",
+      boxSizing: "border-box",
     },
   };
 
@@ -1006,14 +1130,37 @@ export default function App() {
   const ctlDanger = "ctlTextFixDanger";
   const ctlPad = "ctlPadFix";
 
-  const feeLine = useMemo(() => {
-    const fee = (state.config?.feeText || "").trim();
-    const payTo = (state.config?.payTo || "").trim();
-    if (!fee && !payTo) return "";
-    if (fee && payTo) return `臨打費用$${fee}，繳費給: ${payTo}`;
-    if (fee && !payTo) return `臨打費用$${fee}`;
-    return `繳費給: ${payTo}`;
-  }, [state.config?.feeText, state.config?.payTo]);
+  // ===== Undo/Redo =====
+  function undo() {
+    dispatch({ type: "UNDO" });
+    setSelectedId("");
+  }
+  function redo() {
+    dispatch({ type: "REDO" });
+    setSelectedId("");
+  }
+
+  // ===== 重置：長按版本號 3 秒 =====
+  function startResetPress() {
+    if (resetPressTimerRef.current) clearTimeout(resetPressTimerRef.current);
+    resetPressTimerRef.current = setTimeout(async () => {
+      const input = prompt("請輸入管理密碼");
+      if (input === null) return;
+      const hash = await sha256Hex(input);
+      if (hash === ADMIN_HASH) {
+        resetAllHard();
+        alert("系統已重置");
+      } else {
+        alert("密碼錯誤");
+      }
+    }, 3000);
+  }
+  function cancelResetPress() {
+    if (resetPressTimerRef.current) {
+      clearTimeout(resetPressTimerRef.current);
+      resetPressTimerRef.current = null;
+    }
+  }
 
   return (
     <div style={ui.page}>
@@ -1086,38 +1233,124 @@ export default function App() {
         }
       `}</style>
 
+      {/* ===== 名單匯入/匯出 Modal ===== */}
+      {rosterOpen ? (
+        <div
+          style={ui.modalMask}
+          onClick={() => setRosterOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div style={ui.modal} onClick={(e) => e.stopPropagation()}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                marginBottom: 10,
+              }}
+            >
+              <div style={{ fontWeight: 900 }}>
+                名單匯入/匯出（格式：名字/性別，一行一筆）
+              </div>
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={() => setRosterOpen(false)}
+              >
+                關閉
+              </button>
+            </div>
+
+            <div style={{ ...ui.micro, marginBottom: 8 }}>
+              範例：<br />
+              靜儀/女<br />
+              阿宏/男
+            </div>
+
+            <textarea
+              className={`${ctl}`}
+              style={ui.textarea}
+              value={rosterText}
+              onChange={(e) => setRosterText(e.target.value)}
+              placeholder={"靜儀/女\n阿宏/男"}
+            />
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginTop: 10,
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={doExportRoster}
+              >
+                匯出（更新文字框）
+              </button>
+              <button
+                className={`${ctlDanger} ${ctlPad}`}
+                style={ui.btnDanger}
+                onClick={doImportRoster}
+              >
+                匯入（覆蓋名單並重置）
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="topBar" style={ui.topBar}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
             <h2 style={ui.h2}>早安羽球排點系統</h2>
             <span style={ui.badge}>總人數 {totalPeople}</span>
-            {feeLine ? <span style={ui.badge}>{feeLine}</span> : null}
+
+            {/* ✅ 費用顯示：長按 3 秒設定 */}
+            <span
+              style={{
+                ...ui.badge,
+                cursor: "pointer",
+                borderColor: "rgba(244,63,94,.25)",
+              }}
+              title="長按 3 秒設定臨打費用/繳費"
+              onMouseDown={startFeePress}
+              onMouseUp={cancelFeePress}
+              onMouseLeave={cancelFeePress}
+              onTouchStart={startFeePress}
+              onTouchEnd={cancelFeePress}
+              onTouchCancel={cancelFeePress}
+            >
+              {feeLine ? feeLine : "臨打費用/繳費（長按3秒設定）"}
+            </span>
           </div>
 
           <div style={ui.hint}>
-            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或點選人→點格子放置｜固定格互換會先確認｜下場自動補位＋推進｜各區塊自動依性別/姓名排序
+            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或點選人→點格子放置｜
+            固定格互換會先確認｜下場自動補位＋推進｜各區塊自動依性別/姓名排序
           </div>
 
-          {/* 費用設定（可輸入） */}
-          <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <input
-              className={`${ctl} ${ctlPad}`}
-              style={{ ...ui.input, padding: "8px 10px", width: 160 }}
-              placeholder="臨打費用（數字/文字）"
-              value={state.config?.feeText ?? ""}
-              onChange={(e) => setFeeText(e.target.value)}
-            />
-            <input
-              className={`${ctl} ${ctlPad}`}
-              style={{ ...ui.input, padding: "8px 10px", width: 200 }}
-              placeholder="繳費給（姓名/暱稱）"
-              value={state.config?.payTo ?? ""}
-              onChange={(e) => setPayTo(e.target.value)}
-            />
+          {/* ✅ 說明處把「點選」用紅字呈現 */}
+          <div style={{ ...ui.hint, marginTop: 6 }}>
+            拖曳或<span style={{ color: "#EF4444", fontWeight: 900 }}>點選</span>
+            人 → 點格子放置（iPad 建議用點選）
           </div>
         </div>
 
-        {/* ===== Undo / Redo / Fullscreen ===== */}
+        {/* ===== Controls ===== */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button
             className={`${ctl} ${ctlPad}`}
@@ -1155,19 +1388,47 @@ export default function App() {
           >
             {isFullscreen ? "離開全螢幕" : "全螢幕"}
           </button>
+
+          <button
+            className={`${ctl} ${ctlPad}`}
+            style={ui.btnSoft}
+            onClick={openRosterModal}
+            title="名單匯入/匯出"
+          >
+            名單
+          </button>
         </div>
       </div>
 
       {selectedPlayer ? (
-        <div className="cardBox" style={{ ...ui.card, padding: 10, marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div
+          className="cardBox"
+          style={{ ...ui.card, padding: 10, marginBottom: 10 }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
             <div style={{ fontWeight: 900 }}>
-              已選擇：{selectedPlayer.name}（點目的地格子放置 / 點到有人會交換並跳確認）
+              已選擇：{selectedPlayer.name}
+              （點目的地格子放置 / 點到有人會交換並跳確認）
             </div>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => setSelectedId("")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => setSelectedId("")}
+            >
               取消選取
             </button>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => placeSelected({ type: "bench" })}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => placeSelected({ type: "bench" })}
+            >
               放回休息區
             </button>
           </div>
@@ -1175,11 +1436,15 @@ export default function App() {
       ) : null}
 
       <div className="layout">
-        {/* Left: courts + queues */}
+        {/* Left */}
         <div>
           <div style={ui.sectionTitle}>
             <span>上場區（4 面）</span>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("courts")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("courts")}
+            >
               {state.ui.showCourts ? "收折" : "展開"}
             </button>
           </div>
@@ -1194,28 +1459,64 @@ export default function App() {
 
                 return (
                   <div key={ci} className="cardBox" style={ui.card}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginBottom: 8,
+                      }}
+                    >
                       <input
                         className={`${ctl} ${ctlPad}`}
                         value={court.name}
                         onChange={(e) => setCourtName(ci, e.target.value)}
-                        style={{ ...ui.input, fontWeight: 900, flex: 1, minWidth: 140 }}
+                        style={{
+                          ...ui.input,
+                          fontWeight: 900,
+                          flex: 1,
+                          minWidth: 140,
+                        }}
                       />
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
                         <div style={ui.micro}>
-                          {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
+                          {court.startTs
+                            ? `上場時間 ${formatHMS(elapsed)}`
+                            : "未開始"}
                         </div>
-                        <button className={`${ctlDanger} ${ctlPad}`} style={ui.btnDanger} onClick={() => endCourt(ci)} disabled={empty}>
+                        <button
+                          className={`${ctlDanger} ${ctlPad}`}
+                          style={ui.btnDanger}
+                          onClick={() => endCourt(ci)}
+                          disabled={empty}
+                        >
                           下場
                         </button>
                       </div>
                     </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr",
+                        gap: 8,
+                      }}
+                    >
                       {court.slots.map((pid, si) => {
                         const p = pid ? state.players[pid] : null;
-                        const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
+                        const bg = p
+                          ? genderBg(p.gender)
+                          : "rgba(248,250,252,.9)";
 
                         return (
                           <div
@@ -1224,12 +1525,17 @@ export default function App() {
                             style={{
                               ...ui.slot,
                               background: bg,
-                              outline: pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                              outline:
+                                pid && pid === selectedId
+                                  ? "3px solid rgba(34,197,94,.85)"
+                                  : "none",
                               outlineOffset: 2,
                             }}
                             onDragOver={allowDrop}
                             onDrop={(e) => dropTo(e, { type: "court", ci, si })}
-                            onClick={() => onSlotClick({ type: "court", ci, si }, pid)}
+                            onClick={() =>
+                              onSlotClick({ type: "court", ci, si }, pid)
+                            }
                           >
                             {p ? (
                               <div
@@ -1239,9 +1545,17 @@ export default function App() {
                                   e.stopPropagation();
                                   pickPlayer(pid);
                                 }}
-                                style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  minWidth: 0,
+                                  flexWrap: "nowrap",
+                                }}
                               >
-                                <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                                <span style={ui.nameStyle}>
+                                  {shortName(p.name, 7)}
+                                </span>
                                 <span style={ui.pill}>{p.games}</span>
                               </div>
                             ) : (
@@ -1259,7 +1573,11 @@ export default function App() {
 
           <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
             <span>排隊區（4 組：順位 1~4）</span>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("queues")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("queues")}
+            >
               {state.ui.showQueues ? "收折" : "展開"}
             </button>
           </div>
@@ -1268,15 +1586,32 @@ export default function App() {
             <div className="grid4">
               {state.queues.map((group, gi) => (
                 <div key={gi} className="cardBox" style={ui.card}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginBottom: 8,
+                    }}
+                  >
                     <div style={{ fontWeight: 900 }}>排隊 {gi + 1}</div>
                     <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr",
+                      gap: 8,
+                    }}
+                  >
                     {group.map((pid, si) => {
                       const p = pid ? state.players[pid] : null;
-                      const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
+                      const bg = p
+                        ? genderBg(p.gender)
+                        : "rgba(248,250,252,.9)";
 
                       return (
                         <div
@@ -1285,12 +1620,17 @@ export default function App() {
                           style={{
                             ...ui.slot,
                             background: bg,
-                            outline: pid && pid === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                            outline:
+                              pid && pid === selectedId
+                                ? "3px solid rgba(34,197,94,.85)"
+                                : "none",
                             outlineOffset: 2,
                           }}
                           onDragOver={allowDrop}
                           onDrop={(e) => dropTo(e, { type: "queue", gi, si })}
-                          onClick={() => onSlotClick({ type: "queue", gi, si }, pid)}
+                          onClick={() =>
+                            onSlotClick({ type: "queue", gi, si }, pid)
+                          }
                         >
                           {p ? (
                             <div
@@ -1300,9 +1640,17 @@ export default function App() {
                                 e.stopPropagation();
                                 pickPlayer(pid);
                               }}
-                              style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                minWidth: 0,
+                                flexWrap: "nowrap",
+                              }}
                             >
-                              <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                              <span style={ui.nameStyle}>
+                                {shortName(p.name, 7)}
+                              </span>
                               <span style={ui.pill}>{p.games}</span>
                             </div>
                           ) : (
@@ -1318,20 +1666,37 @@ export default function App() {
           ) : null}
         </div>
 
-        {/* Right: bench */}
+        {/* Right */}
         <div className="benchSticky">
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-            <button className={`${ctl} ${ctlPad}`} style={ui.btnSoft} onClick={() => toggleSection("bench")}>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("bench")}
+            >
               {state.ui.showBench ? "收折" : "展開"}
             </button>
           </div>
 
-          <div className="benchBox" style={ui.benchCard} onDragOver={allowDrop} onDrop={(e) => dropTo(e, { type: "bench" })}>
+          <div
+            className="benchBox"
+            style={ui.benchCard}
+            onDragOver={allowDrop}
+            onDrop={(e) => dropTo(e, { type: "bench" })}
+          >
             {state.ui.showBench ? (
               <>
-                {/* 新增區（不捲動，永遠在上方） */}
-                <div className="cardBox" style={{ ...ui.card, padding: 10, boxShadow: "none", marginBottom: 10 }}>
+                {/* 新增區 */}
+                <div
+                  className="cardBox"
+                  style={{
+                    ...ui.card,
+                    padding: 10,
+                    boxShadow: "none",
+                    marginBottom: 10,
+                  }}
+                >
                   <div className="formRow" style={ui.formRow}>
                     <input
                       className={`${ctl} ${ctlPad}`}
@@ -1340,17 +1705,26 @@ export default function App() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                     />
-                    <select className={`${ctl} ${ctlPad}`} style={ui.select} value={gender} onChange={(e) => setGender(e.target.value)}>
+                    <select
+                      className={`${ctl} ${ctlPad}`}
+                      style={ui.select}
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                    >
                       <option value="男">男</option>
                       <option value="女">女</option>
                     </select>
-                    <button className={`${ctl} ${ctlPad}`} style={ui.btn} onClick={addPlayer}>
+                    <button
+                      className={`${ctl} ${ctlPad}`}
+                      style={ui.btn}
+                      onClick={addPlayer}
+                    >
                       新增
                     </button>
                   </div>
                 </div>
 
-                {/* 名單區：固定高度＋內部可捲動 */}
+                {/* 名單區 */}
                 <div className="benchScrollArea">
                   <div className="benchList2" style={ui.list2}>
                     {benchPlayers.map((p) => (
@@ -1363,12 +1737,25 @@ export default function App() {
                         style={{
                           ...ui.benchItem,
                           background: genderBg(p.gender),
-                          outline: p.id && p.id === selectedId ? "3px solid rgba(34,197,94,.85)" : "none",
+                          outline:
+                            p.id && p.id === selectedId
+                              ? "3px solid rgba(34,197,94,.85)"
+                              : "none",
                           outlineOffset: 2,
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap" }}>
-                          <span style={ui.nameStyle}>{shortName(p.name, 5)}</span>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            minWidth: 0,
+                            flexWrap: "nowrap",
+                          }}
+                        >
+                          <span style={ui.nameStyle}>
+                            {shortName(p.name, 7)}
+                          </span>
                           <span style={ui.pill}>{p.games}</span>
                         </div>
 
@@ -1398,39 +1785,15 @@ export default function App() {
         </div>
       </div>
 
+      {/* 版本號：長按 3 秒重置 */}
       <div
         style={{ ...ui.version, cursor: "pointer", userSelect: "none" }}
-        onMouseDown={() => {
-          const timer = setTimeout(async () => {
-            const input = prompt("請輸入管理密碼");
-            if (input === null) return;
-            const hash = await sha256Hex(input);
-            if (hash === ADMIN_HASH) {
-              resetAllHard();
-              alert("系統已重置");
-            } else {
-              alert("密碼錯誤");
-            }
-          }, 3000);
-          setPressTimer(timer);
-        }}
-        onMouseUp={() => pressTimer && clearTimeout(pressTimer)}
-        onMouseLeave={() => pressTimer && clearTimeout(pressTimer)}
-        onTouchStart={() => {
-          const timer = setTimeout(async () => {
-            const input = prompt("請輸入管理密碼");
-            if (input === null) return;
-            const hash = await sha256Hex(input);
-            if (hash === ADMIN_HASH) {
-              resetAllHard();
-              alert("系統已重置");
-            } else {
-              alert("密碼錯誤");
-            }
-          }, 3000);
-          setPressTimer(timer);
-        }}
-        onTouchEnd={() => pressTimer && clearTimeout(pressTimer)}
+        onMouseDown={startResetPress}
+        onMouseUp={cancelResetPress}
+        onMouseLeave={cancelResetPress}
+        onTouchStart={startResetPress}
+        onTouchEnd={cancelResetPress}
+        onTouchCancel={cancelResetPress}
       >
         {VERSION_NAME} · 更新時間：{VERSION_TIME}
       </div>
