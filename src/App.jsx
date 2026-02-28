@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 /**
- * v1.1.2 + Build time (部署時間)
+ * v1.1.3 + Build time (部署時間)
  */
-const VERSION_NAME = "v1.1.2";
+const VERSION_NAME = "v1.1.3";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -104,6 +104,7 @@ function initialState() {
       showCourts: true,
       showQueues: true,
       showBench: true,
+      showDelete: false, // ✅ 刪除按鈕顯示開關：預設關
     },
     config: {
       feeText: "",
@@ -178,6 +179,10 @@ function normalize(st) {
       typeof next.ui?.showBench === "boolean"
         ? next.ui.showBench
         : base.ui.showBench,
+    showDelete:
+      typeof next.ui?.showDelete === "boolean"
+        ? next.ui.showDelete
+        : base.ui.showDelete,
   };
 
   next.config = {
@@ -622,6 +627,7 @@ export default function App() {
       if (key === "courts") next.ui.showCourts = !next.ui.showCourts;
       if (key === "queues") next.ui.showQueues = !next.ui.showQueues;
       if (key === "bench") next.ui.showBench = !next.ui.showBench;
+      if (key === "delete") next.ui.showDelete = !next.ui.showDelete; // ✅ 刪除模式開關
       return next;
     });
   }
@@ -1699,13 +1705,26 @@ export default function App() {
         <div className="benchSticky">
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => toggleSection("bench")}
-            >
-              {state.ui.showBench ? "收折" : "展開"}
-            </button>
+
+            {/* ✅ 右側多顆按鈕 */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                className={`${state.ui.showDelete ? ctlDanger : ctl} ${ctlPad}`}
+                style={state.ui.showDelete ? ui.btnDanger : ui.btnSoft}
+                onClick={() => toggleSection("delete")}
+                title="開啟後才會顯示每個人右側的刪除按鈕"
+              >
+                刪除：{state.ui.showDelete ? "開" : "關"}
+              </button>
+
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={() => toggleSection("bench")}
+              >
+                {state.ui.showBench ? "收折" : "展開"}
+              </button>
+            </div>
           </div>
 
           <div
@@ -1784,16 +1803,19 @@ export default function App() {
                           <span style={ui.pill}>{p.games}</span>
                         </div>
 
-                        <button
-                          className={`${ctl} ${ctlPad}`}
-                          style={ui.btn}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removePlayer(p.id);
-                          }}
-                        >
-                          刪
-                        </button>
+                        {/* ✅ 刪除按鈕：預設不顯示，開啟「刪除：開」才顯示 */}
+                        {state.ui.showDelete ? (
+                          <button
+                            className={`${ctl} ${ctlPad}`}
+                            style={ui.btn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removePlayer(p.id);
+                            }}
+                          >
+                            刪
+                          </button>
+                        ) : null}
                       </div>
                     ))}
                   </div>
