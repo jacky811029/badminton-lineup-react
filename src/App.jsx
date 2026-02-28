@@ -1162,6 +1162,16 @@ export default function App() {
       "0 0 0 3px rgba(34,197,94,.35), 0 10px 25px rgba(34,197,94,.18)",
   };
 
+  // ✅ 個別隊員名稱上方的小 toast（顯示「已選擇」）
+  function PlayerName({ name, isSelected, style, max = 7 }) {
+    return (
+      <span className="pToastWrap" style={style}>
+        {isSelected ? <span className="pToast">已選擇</span> : null}
+        {shortName(name, max)}
+      </span>
+    );
+  }
+
   // GitHub Pages/全域 CSS 可能把控制項文字弄成透明或 font-size=0，這裡強制修正
   const ctl = "ctlTextFix";
   const ctlDanger = "ctlTextFixDanger";
@@ -1269,17 +1279,16 @@ export default function App() {
           opacity: 1 !important;
         }
 
-        /* ✅ 名稱上方的小 toast（不佔 layout） */
-        .nameToastWrap{
+        /* ✅ 個別隊員名稱上方小 toast */
+        .pToastWrap{
           position: relative;
           display: inline-flex;
           align-items: center;
-          gap: 8px;
-          flex-wrap: wrap;
+          min-width: 0;
         }
-        .nameToast{
+        .pToast{
           position: absolute;
-          top: -18px;
+          top: -16px;
           left: 0;
           background: rgba(15,23,42,.92);
           color: #fff;
@@ -1368,10 +1377,14 @@ export default function App() {
 
       <div className="topBar" style={ui.topBar}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          {/* ✅ 名稱上方小 toast（只在有選取時顯示） */}
-          <div className="nameToastWrap">
-            {selectedPlayer ? <div className="nameToast">已選擇</div> : null}
-
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
             <h2 style={ui.h2}>早安羽球排點系統</h2>
 
             <span style={ui.badge}>總人數 {totalPeople}</span>
@@ -1393,31 +1406,6 @@ export default function App() {
             >
               {feeLine ? feeLine : "臨打費用/繳費（長按3秒設定）"}
             </span>
-
-            {/* ✅ 小提示：顯示選取的人名 + 快捷按鈕（不推擠 layout） */}
-            {selectedPlayer ? (
-              <>
-                <span style={{ ...ui.badge, borderColor: "rgba(34,197,94,.35)" }}>
-                  {selectedPlayer.name}
-                </span>
-                <button
-                  className={`${ctl} ${ctlPad}`}
-                  style={ui.btnSoft}
-                  onClick={() => setSelectedId("")}
-                  title="取消選取"
-                >
-                  取消
-                </button>
-                <button
-                  className={`${ctl} ${ctlPad}`}
-                  style={ui.btnSoft}
-                  onClick={() => placeSelected({ type: "bench" })}
-                  title="放回休息區"
-                >
-                  放回
-                </button>
-              </>
-            ) : null}
           </div>
 
           <div style={ui.hint}>
@@ -1592,9 +1580,11 @@ export default function App() {
                                   flexWrap: "nowrap",
                                 }}
                               >
-                                <span style={ui.nameStyle}>
-                                  {shortName(p.name, 7)}
-                                </span>
+                                <PlayerName
+                                  name={p.name}
+                                  isSelected={pid === selectedId}
+                                  style={ui.nameStyle}
+                                />
                                 <span style={ui.pill}>{p.games}</span>
                               </div>
                             ) : (
@@ -1683,9 +1673,11 @@ export default function App() {
                                 flexWrap: "nowrap",
                               }}
                             >
-                              <span style={ui.nameStyle}>
-                                {shortName(p.name, 7)}
-                              </span>
+                              <PlayerName
+                                name={p.name}
+                                isSelected={pid === selectedId}
+                                style={ui.nameStyle}
+                              />
                               <span style={ui.pill}>{p.games}</span>
                             </div>
                           ) : (
@@ -1802,9 +1794,11 @@ export default function App() {
                             flexWrap: "nowrap",
                           }}
                         >
-                          <span style={ui.nameStyle}>
-                            {shortName(p.name, 7)}
-                          </span>
+                          <PlayerName
+                            name={p.name}
+                            isSelected={p.id === selectedId}
+                            style={ui.nameStyle}
+                          />
                           <span style={ui.pill}>{p.games}</span>
                         </div>
 
