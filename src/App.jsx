@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 /**
- * v1.1.3 + Build time (部署時間)
+ * v1.2.0 + Build time (部署時間)
+ * ✅ 新增：
+ * 1) 名單匯入/匯出：名字/性別/分類/(請假替補名)/(替補性別)
+ * 2) 收費按鈕：人員收費 + 用球紀錄 + 歷史清單
  */
-const VERSION_NAME = "v1.1.3";
+const VERSION_NAME = "v1.2.0";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -16,7 +19,7 @@ const VERSION_TIME = new Date().toLocaleString("zh-TW", {
 
 const STORAGE_KEY = "badminton_lineup_local_v8";
 
-// ===== 預設休息區名單 =====
+// ===== 預設休息區名單（未指定分類則預設：臨打）=====
 const DEFAULT_ROSTER = [
   { name: "菜脯", gender: "男" },
   { name: "冠皓", gender: "男" },
@@ -70,146 +73,13 @@ function shortName(name, max = 7) {
   return arr.slice(0, max).join("") + "…";
 }
 
-function buildDefaultPlayersAndBench() {
-  const players = {};
-  const bench = [];
-
-  DEFAULT_ROSTER.forEach((r, i) => {
-    const id = `d${String(i + 1).padStart(3, "0")}`;
-    players[id] = {
-      id,
-      name: String(r.name || "").trim(),
-      gender: r.gender === "女" ? "女" : "男",
-      games: 0,
-      totalSeconds: 0,
-    };
-    bench.push(id);
-  });
-
-  return { players, bench };
-}
-
-function initialState() {
-  const { players, bench } = buildDefaultPlayersAndBench();
-  return {
-    players,
-    bench,
-    queues: emptySlots(4, 4),
-    courts: Array.from({ length: 4 }, (_, i) => ({
-      name: `場地 ${i + 1}`,
-      slots: ["", "", "", ""],
-      startTs: 0,
-    })),
-    ui: {
-      showCourts: true,
-      showQueues: true,
-      showBench: true,
-      showDelete: false, // ✅ 刪除模式：預設關
-    },
-    config: {
-      feeText: "",
-      payTo: "",
-    },
-  };
-}
-
-function safeParse(raw, fallback) {
-  try {
-    const v = JSON.parse(raw);
-    return v ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function normalize(st) {
-  const base = initialState();
-  const next = { ...base, ...(st || {}) };
-
-  next.players = next.players || {};
-  next.bench = Array.isArray(next.bench) ? next.bench : [];
-
-  const q = Array.isArray(next.queues) ? next.queues : emptySlots(4, 4);
-  next.queues = Array.from({ length: 4 }, (_, gi) => {
-    const row = q[gi] || [];
-    return Array.from({ length: 4 }, (_, si) => row[si] || "");
-  });
-
-  const c = Array.isArray(next.courts) ? next.courts : base.courts;
-  next.courts = Array.from({ length: 4 }, (_, ci) => {
-    const court = c[ci] || base.courts[ci];
-    const slots = Array.isArray(court?.slots) ? court.slots : ["", "", "", ""];
-    return {
-      name: String(court?.name || `場地 ${ci + 1}`),
-      slots: Array.from({ length: 4 }, (_, si) => slots[si] || ""),
-      startTs: typeof court?.startTs === "number" ? court.startTs : 0,
-    };
-  });
-
-  for (const id of Object.keys(next.players)) {
-    const p = next.players[id];
-    next.players[id] = {
-      id,
-      name: String(p?.name ?? ""),
-      gender: p?.gender === "女" ? "女" : "男",
-      games: typeof p?.games === "number" ? p.games : 0,
-      totalSeconds: typeof p?.totalSeconds === "number" ? p.totalSeconds : 0,
-    };
-  }
-
-  // bench 去除不存在與重複 id（排序由 sortAllBlocks 決定）
-  const seen = new Set();
-  next.bench = next.bench.filter((id) => {
-    if (!next.players[id]) return false;
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-
-  next.ui = {
-    showCourts:
-      typeof next.ui?.showCourts === "boolean"
-        ? next.ui.showCourts
-        : base.ui.showCourts,
-    showQueues:
-      typeof next.ui?.showQueues === "boolean"
-        ? next.ui.showQueues
-        : base.ui.showQueues,
-    showBench:
-      typeof next.ui?.showBench === "boolean"
-        ? next.ui.showBench
-        : base.ui.showBench,
-    showDelete:
-      typeof next.ui?.showDelete === "boolean"
-        ? next.ui.showDelete
-        : base.ui.showDelete,
-  };
-
-  next.config = {
-    feeText: String(next.config?.feeText ?? base.config.feeText),
-    payTo: String(next.config?.payTo ?? base.config.payTo),
-  };
-
-  return next;
-}
-
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return initialState();
-  return normalize(safeParse(raw, initialState()));
-}
-
-function saveState(st) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
-}
-
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
 function genderBg(g) {
-  if (g === "男") return "#DCEBFF";
-  if (g === "女") return "#FFE0EF";
+  if (g === "男") return "#DCEBFF"; // 粉藍底
+  if (g === "女") return "#FFE0EF"; // 粉紅底
   return "#EEF2F7";
 }
 
@@ -286,6 +156,13 @@ function nowSec() {
   return Math.floor(Date.now() / 1000);
 }
 
+function formatDateYMD(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${dd}`;
+}
+
 /** ===== 依性別→名稱排序（女先男後，空位最後） ===== */
 function genderOrder(g) {
   return g === "女" ? 0 : 1;
@@ -321,6 +198,21 @@ function sortAllBlocks(st) {
     };
   });
   return next;
+}
+
+/** ===== 分類處理 ===== */
+function normalizeCategoryText(c) {
+  const s = String(c || "").trim();
+  if (s === "季繳") return "季繳";
+  if (s === "臨打") return "臨打";
+  if (s === "季繳請假") return "季繳請假";
+  return "臨打";
+}
+function categoryOrder(c) {
+  const v = normalizeCategoryText(c);
+  if (v === "季繳") return 0;
+  if (v === "季繳請假") return 1;
+  return 2; // 臨打
 }
 
 /** ====== History (Undo/Redo) ====== */
@@ -368,7 +260,12 @@ function historyReducer(h, action) {
   }
 }
 
-/** ===== 名單匯入/匯出：name/gender 一行一筆 ===== */
+/** ===== 名單匯入/匯出 =====
+ * 格式：
+ * 名字/性別/分類
+ * 或
+ * 名字/性別/季繳請假/替補名字/替補性別
+ */
 function normalizeGenderText(g) {
   const s = String(g || "").trim();
   if (s === "女") return "女";
@@ -390,41 +287,356 @@ function parseRosterText(text) {
     const parts = line.split(/[\/／]/).map((x) => x.trim());
     const name = parts[0] || "";
     if (!name) continue;
-    const gender = normalizeGenderText(parts[1] || "");
-    rows.push({ name, gender });
+
+    const gender = normalizeGenderText(parts[1] || "男");
+    const category = normalizeCategoryText(parts[2] || "臨打");
+
+    let subName = "";
+    let subGender = "";
+
+    if (category === "季繳請假") {
+      subName = String(parts[3] || "").trim();
+      subGender = subName ? normalizeGenderText(parts[4] || "男") : "";
+    }
+
+    rows.push({ name, gender, category, subName, subGender });
   }
   return rows;
 }
+
 function rosterToText(playersMap) {
   const arr = Object.values(playersMap || {});
-  arr.sort((a, b) => comparePlayers(a, b));
-  return arr.map((p) => `${p.name}/${p.gender}`).join("\n");
+  arr.sort((a, b) => {
+    const ca = categoryOrder(a?.category);
+    const cb = categoryOrder(b?.category);
+    if (ca !== cb) return ca - cb;
+
+    const ga = genderOrder(a?.origGender ?? a?.gender);
+    const gb = genderOrder(b?.origGender ?? b?.gender);
+    if (ga !== gb) return ga - gb;
+
+    const na = String(a?.origName ?? a?.name ?? "");
+    const nb = String(b?.origName ?? b?.name ?? "");
+    return na.localeCompare(nb, "zh-TW", { numeric: true, sensitivity: "base" });
+  });
+
+  return arr
+    .map((p) => {
+      const category = normalizeCategoryText(p.category);
+      const origName = String(p.origName ?? p.name ?? "").trim();
+      const origGender = normalizeGenderText(p.origGender ?? p.gender ?? "男");
+
+      if (category === "季繳請假") {
+        const subName = String(p.subName || "").trim();
+        const subGender = subName
+          ? normalizeGenderText(p.subGender || "男")
+          : "";
+        if (subName && subGender) {
+          return `${origName}/${origGender}/${category}/${subName}/${subGender}`;
+        }
+      }
+      return `${origName}/${origGender}/${category}`;
+    })
+    .join("\n");
 }
+
 function buildPlayersFromRosterRows(rows) {
   const players = {};
   const bench = [];
+  const payments = {}; // 已收費預設：季繳=true，其它=false
 
   const nameCount = new Map();
-  rows.forEach((r, idx) => {
-    const baseName = String(r.name || "").trim();
-    if (!baseName) return;
 
-    const c = (nameCount.get(baseName) || 0) + 1;
-    nameCount.set(baseName, c);
-    const name = c === 1 ? baseName : `${baseName}(${c})`;
+  rows.forEach((r, idx) => {
+    const category = normalizeCategoryText(r.category);
+    const origNameRaw = String(r.name || "").trim();
+    const origGenderRaw = normalizeGenderText(r.gender || "男");
+
+    if (!origNameRaw) return;
+
+    // ✅ 若為季繳請假：顯示名單用替補名字/性別取代（但仍保留原始欄位給收費表）
+    const effectiveNameBase =
+      category === "季繳請假" && String(r.subName || "").trim()
+        ? String(r.subName || "").trim()
+        : origNameRaw;
+
+    const effectiveGender =
+      category === "季繳請假" && String(r.subName || "").trim()
+        ? normalizeGenderText(r.subGender || "男")
+        : origGenderRaw;
+
+    // 同名處理（以「顯示名」為準）
+    const c = (nameCount.get(effectiveNameBase) || 0) + 1;
+    nameCount.set(effectiveNameBase, c);
+    const effectiveName = c === 1 ? effectiveNameBase : `${effectiveNameBase}(${c})`;
 
     const id = `i${String(idx + 1).padStart(3, "0")}_${uid()}`;
+
+    const subName = category === "季繳請假" ? String(r.subName || "").trim() : "";
+    const subGender =
+      category === "季繳請假" && subName
+        ? normalizeGenderText(r.subGender || "男")
+        : "";
+
     players[id] = {
       id,
-      name,
-      gender: r.gender === "女" ? "女" : "男",
+      // 顯示用（休息區/上場/排隊）
+      name: effectiveName,
+      gender: effectiveGender,
+
+      // 收費/匯出用（保留原始欄位）
+      category,
+      origName: origNameRaw,
+      origGender: origGenderRaw,
+      subName,
+      subGender,
+
       games: 0,
       totalSeconds: 0,
     };
+
+    payments[id] = category === "季繳";
     bench.push(id);
   });
 
-  return { players, bench };
+  return { players, bench, payments };
+}
+
+/** ===== 初始 State ===== */
+function buildDefaultPlayersAndBench() {
+  const players = {};
+  const bench = [];
+  const payments = {};
+
+  DEFAULT_ROSTER.forEach((r, i) => {
+    const id = `d${String(i + 1).padStart(3, "0")}`;
+    const name = String(r.name || "").trim();
+    const gender = r.gender === "女" ? "女" : "男";
+    const category = "臨打"; // 預設
+
+    players[id] = {
+      id,
+      name,
+      gender,
+
+      category,
+      origName: name,
+      origGender: gender,
+      subName: "",
+      subGender: "",
+
+      games: 0,
+      totalSeconds: 0,
+    };
+
+    payments[id] = category === "季繳";
+    bench.push(id);
+  });
+
+  return { players, bench, payments };
+}
+
+function initialState() {
+  const { players, bench, payments } = buildDefaultPlayersAndBench();
+  return {
+    players,
+    bench,
+    queues: emptySlots(4, 4),
+    courts: Array.from({ length: 4 }, (_, i) => ({
+      name: `場地 ${i + 1}`,
+      slots: ["", "", "", ""],
+      startTs: 0,
+    })),
+    ui: {
+      showCourts: true,
+      showQueues: true,
+      showBench: true,
+      showDelete: false, // 刪除模式：預設關
+    },
+    config: {
+      // 舊：顯示在頂部的提示（長按設定）
+      feeText: "",
+      payTo: "",
+
+      // ✅ 新：收費表各分類費用（可輸入）
+      feeSeason: "", // 季繳
+      feeCasual: "", // 臨打
+      feeLeave: "", // 季繳請假
+    },
+
+    // ✅ 付款勾選狀態
+    payments,
+
+    // ✅ 用球紀錄（當天）
+    ball: {
+      buckets: "",
+      balls: "",
+      amount: "",
+    },
+
+    // ✅ 歷史清單（依日期保存）
+    dailyHistory: [],
+  };
+}
+
+function safeParse(raw, fallback) {
+  try {
+    const v = JSON.parse(raw);
+    return v ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalize(st) {
+  const base = initialState();
+  const next = { ...base, ...(st || {}) };
+
+  next.players = next.players || {};
+  next.bench = Array.isArray(next.bench) ? next.bench : [];
+
+  const q = Array.isArray(next.queues) ? next.queues : emptySlots(4, 4);
+  next.queues = Array.from({ length: 4 }, (_, gi) => {
+    const row = q[gi] || [];
+    return Array.from({ length: 4 }, (_, si) => row[si] || "");
+  });
+
+  const c = Array.isArray(next.courts) ? next.courts : base.courts;
+  next.courts = Array.from({ length: 4 }, (_, ci) => {
+    const court = c[ci] || base.courts[ci];
+    const slots = Array.isArray(court?.slots) ? court.slots : ["", "", "", ""];
+    return {
+      name: String(court?.name || `場地 ${ci + 1}`),
+      slots: Array.from({ length: 4 }, (_, si) => slots[si] || ""),
+      startTs: typeof court?.startTs === "number" ? court.startTs : 0,
+    };
+  });
+
+  for (const id of Object.keys(next.players)) {
+    const p = next.players[id];
+    const category = normalizeCategoryText(p?.category ?? "臨打");
+
+    const origName = String(p?.origName ?? p?.name ?? "");
+    const origGender = normalizeGenderText(p?.origGender ?? p?.gender ?? "男");
+
+    const subName = category === "季繳請假" ? String(p?.subName ?? "") : "";
+    const subGender =
+      category === "季繳請假" && String(subName || "").trim()
+        ? normalizeGenderText(p?.subGender ?? "男")
+        : "";
+
+    // 顯示名：若是請假且有替補，就顯示替補（否則顯示原始）
+    const effectiveName =
+      category === "季繳請假" && String(subName || "").trim()
+        ? String(p?.name ?? subName ?? "")
+        : String(p?.name ?? origName ?? "");
+
+    const effectiveGender =
+      category === "季繳請假" && String(subName || "").trim()
+        ? normalizeGenderText(p?.gender ?? subGender ?? "男")
+        : normalizeGenderText(p?.gender ?? origGender ?? "男");
+
+    next.players[id] = {
+      id,
+      name: String(effectiveName ?? ""),
+      gender: effectiveGender === "女" ? "女" : "男",
+
+      category,
+      origName,
+      origGender: origGender === "女" ? "女" : "男",
+      subName,
+      subGender,
+
+      games: typeof p?.games === "number" ? p.games : 0,
+      totalSeconds: typeof p?.totalSeconds === "number" ? p.totalSeconds : 0,
+    };
+  }
+
+  // bench 去除不存在與重複 id
+  const seen = new Set();
+  next.bench = next.bench.filter((id) => {
+    if (!next.players[id]) return false;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+
+  next.ui = {
+    showCourts:
+      typeof next.ui?.showCourts === "boolean"
+        ? next.ui.showCourts
+        : base.ui.showCourts,
+    showQueues:
+      typeof next.ui?.showQueues === "boolean"
+        ? next.ui.showQueues
+        : base.ui.showQueues,
+    showBench:
+      typeof next.ui?.showBench === "boolean"
+        ? next.ui.showBench
+        : base.ui.showBench,
+    showDelete:
+      typeof next.ui?.showDelete === "boolean"
+        ? next.ui.showDelete
+        : base.ui.showDelete,
+  };
+
+  next.config = {
+    feeText: String(next.config?.feeText ?? base.config.feeText),
+    payTo: String(next.config?.payTo ?? base.config.payTo),
+    feeSeason: String(next.config?.feeSeason ?? base.config.feeSeason),
+    feeCasual: String(next.config?.feeCasual ?? base.config.feeCasual),
+    feeLeave: String(next.config?.feeLeave ?? base.config.feeLeave),
+  };
+
+  // payments
+  const pay = next.payments && typeof next.payments === "object" ? next.payments : {};
+  next.payments = {};
+  for (const id of Object.keys(next.players)) {
+    const v = pay[id];
+    if (typeof v === "boolean") next.payments[id] = v;
+    else next.payments[id] = normalizeCategoryText(next.players[id]?.category) === "季繳";
+  }
+
+  // ball
+  next.ball = {
+    buckets: String(next.ball?.buckets ?? base.ball.buckets),
+    balls: String(next.ball?.balls ?? base.ball.balls),
+    amount: String(next.ball?.amount ?? base.ball.amount),
+  };
+
+  // dailyHistory
+  next.dailyHistory = Array.isArray(next.dailyHistory) ? next.dailyHistory : [];
+  next.dailyHistory = next.dailyHistory
+    .map((x) => ({
+      date: String(x?.date || ""),
+      totalPeople: typeof x?.totalPeople === "number" ? x.totalPeople : 0,
+      subtotal: {
+        season: typeof x?.subtotal?.season === "number" ? x.subtotal.season : 0,
+        casual: typeof x?.subtotal?.casual === "number" ? x.subtotal.casual : 0,
+        leave: typeof x?.subtotal?.leave === "number" ? x.subtotal.leave : 0,
+        total: typeof x?.subtotal?.total === "number" ? x.subtotal.total : 0,
+        collected:
+          typeof x?.subtotal?.collected === "number" ? x.subtotal.collected : 0,
+      },
+      ball: {
+        buckets: String(x?.ball?.buckets ?? ""),
+        balls: String(x?.ball?.balls ?? ""),
+        amount: String(x?.ball?.amount ?? ""),
+      },
+    }))
+    .filter((x) => x.date);
+
+  return next;
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return initialState();
+  return normalize(safeParse(raw, initialState()));
+}
+
+function saveState(st) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
 }
 
 export default function App() {
@@ -511,15 +723,15 @@ export default function App() {
     setRosterOpen(true);
     setRosterText(rosterToText(state.players));
   }
-
   function doExportRoster() {
     setRosterText(rosterToText(state.players));
   }
-
   function doImportRoster() {
     const rows = parseRosterText(rosterText);
     if (!rows.length) {
-      alert("沒有可匯入的資料（請用：名字/性別，一行一筆）。");
+      alert(
+        "沒有可匯入的資料（格式：名字/性別/分類，或 名字/性別/季繳請假/替補名字/替補性別）。"
+      );
       return;
     }
 
@@ -530,12 +742,13 @@ export default function App() {
 
     applyState((prev) => {
       const base = structuredClone(normalize(prev));
+      const { players, bench, payments } = buildPlayersFromRosterRows(rows);
 
-      const { players, bench } = buildPlayersFromRosterRows(rows);
       base.players = players;
       base.bench = bench;
+      base.payments = payments;
 
-      // 重置位置（保留場地名稱、UI、費用設定）
+      // 重置位置（保留場地名稱、UI、費用設定、用球、歷史）
       base.queues = emptySlots(4, 4);
       base.courts = base.courts.map((c, i) => ({
         name: c?.name || `場地 ${i + 1}`,
@@ -550,7 +763,15 @@ export default function App() {
     alert("匯入完成（已重置上場/排隊）。");
   }
 
-  // ===== 費用設定：長按 3 秒 =====
+  // ===== 收費 Modal =====
+  const [chargeOpen, setChargeOpen] = useState(false);
+  const today = useMemo(() => formatDateYMD(new Date()), [tick]);
+
+  function openChargeModal() {
+    setChargeOpen(true);
+  }
+
+  // ===== 費用設定：長按 3 秒（舊：頂部顯示用）=====
   function startFeePress() {
     if (feePressTimerRef.current) clearTimeout(feePressTimerRef.current);
     feePressTimerRef.current = setTimeout(() => {
@@ -586,11 +807,23 @@ export default function App() {
     }
 
     const id = uid();
-    const p = { id, name: n, gender, games: 0, totalSeconds: 0 };
+    const p = {
+      id,
+      name: n,
+      gender,
+      category: "臨打",
+      origName: n,
+      origGender: gender,
+      subName: "",
+      subGender: "",
+      games: 0,
+      totalSeconds: 0,
+    };
 
     applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.players[id] = p;
+      next.payments[id] = false; // 臨打預設未收費
       benchPushFront(next, id);
       return next;
     });
@@ -607,6 +840,7 @@ export default function App() {
       const next = structuredClone(normalize(prev));
       removeEverywhere(next, id);
       delete next.players[id];
+      if (next.payments) delete next.payments[id];
       return next;
     });
 
@@ -940,6 +1174,120 @@ export default function App() {
     return `繳費給: ${payTo}`;
   }, [state.config?.feeText, state.config?.payTo]);
 
+  // ===== 收費表資料 =====
+  function parseMoney(v) {
+    const s = String(v ?? "").trim();
+    if (!s) return 0;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function feeByCategory(cat) {
+    const c = normalizeCategoryText(cat);
+    if (c === "季繳") return parseMoney(state.config.feeSeason);
+    if (c === "季繳請假") return parseMoney(state.config.feeLeave);
+    return parseMoney(state.config.feeCasual);
+  }
+
+  const chargeRows = useMemo(() => {
+    const arr = Object.values(state.players || {});
+    arr.sort((a, b) => {
+      const ca = categoryOrder(a?.category);
+      const cb = categoryOrder(b?.category);
+      if (ca !== cb) return ca - cb;
+
+      const ga = genderOrder(a?.origGender ?? a?.gender);
+      const gb = genderOrder(b?.origGender ?? b?.gender);
+      if (ga !== gb) return ga - gb;
+
+      const na = String(a?.origName ?? a?.name ?? "");
+      const nb = String(b?.origName ?? b?.name ?? "");
+      return na.localeCompare(nb, "zh-TW", { numeric: true, sensitivity: "base" });
+    });
+    return arr;
+  }, [state.players]);
+
+  const chargeTotals = useMemo(() => {
+    let season = 0,
+      casual = 0,
+      leave = 0,
+      collected = 0;
+
+    for (const p of chargeRows) {
+      const cat = normalizeCategoryText(p.category);
+      const fee = feeByCategory(cat);
+
+      if (cat === "季繳") season += fee;
+      else if (cat === "季繳請假") leave += fee;
+      else casual += fee;
+
+      const paid = !!state.payments?.[p.id];
+      if (paid) collected += fee;
+    }
+    const total = season + casual + leave;
+    return { season, casual, leave, total, collected };
+  }, [chargeRows, state.payments, state.config.feeSeason, state.config.feeCasual, state.config.feeLeave]);
+
+  function togglePaid(pid) {
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      next.payments[pid] = !next.payments[pid];
+      return next;
+    });
+  }
+
+  function setCategoryFee(key, v) {
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      if (key === "season") next.config.feeSeason = String(v);
+      if (key === "casual") next.config.feeCasual = String(v);
+      if (key === "leave") next.config.feeLeave = String(v);
+      return next;
+    });
+  }
+
+  function setBallField(key, v) {
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      next.ball[key] = String(v);
+      return next;
+    });
+  }
+
+  function saveTodayToHistory() {
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      const date = formatDateYMD(new Date());
+      const record = {
+        date,
+        totalPeople: Object.keys(next.players || {}).length,
+        subtotal: {
+          season: chargeTotals.season,
+          casual: chargeTotals.casual,
+          leave: chargeTotals.leave,
+          total: chargeTotals.total,
+          collected: chargeTotals.collected,
+        },
+        ball: {
+          buckets: String(next.ball?.buckets ?? ""),
+          balls: String(next.ball?.balls ?? ""),
+          amount: String(next.ball?.amount ?? ""),
+        },
+      };
+
+      const idx = next.dailyHistory.findIndex((x) => x.date === date);
+      if (idx >= 0) next.dailyHistory[idx] = record;
+      else next.dailyHistory.push(record);
+
+      // 排序：新到舊
+      next.dailyHistory.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+      return next;
+    });
+
+    alert("已保存到歷史清單（同日期會覆蓋更新）。");
+  }
+
   // ===== Styles =====
   const ui = {
     page: {
@@ -1115,12 +1463,14 @@ export default function App() {
       zIndex: 9999,
     },
     modal: {
-      width: "min(920px, 100%)",
+      width: "min(1100px, 100%)",
       borderRadius: 18,
       background: "rgba(255,255,255,.95)",
       border: "1px solid rgba(15,23,42,.12)",
       boxShadow: "0 18px 50px rgba(15,23,42,.22)",
       padding: 12,
+      maxHeight: "calc(100vh - 28px)",
+      overflow: "auto",
     },
     textarea: {
       width: "100%",
@@ -1137,6 +1487,34 @@ export default function App() {
       background: "rgba(248,250,252,.95)",
       boxSizing: "border-box",
     },
+    table: {
+      width: "100%",
+      borderCollapse: "separate",
+      borderSpacing: 0,
+      fontSize: 13,
+      overflow: "hidden",
+      borderRadius: 14,
+      border: "1px solid rgba(15,23,42,.10)",
+      background: "rgba(255,255,255,.90)",
+    },
+    th: {
+      textAlign: "left",
+      padding: "8px 10px",
+      borderBottom: "1px solid rgba(15,23,42,.10)",
+      background: "rgba(248,250,252,.95)",
+      position: "sticky",
+      top: 0,
+      zIndex: 1,
+      whiteSpace: "nowrap",
+      fontWeight: 900,
+    },
+    td: {
+      padding: "8px 10px",
+      borderBottom: "1px solid rgba(15,23,42,.08)",
+      verticalAlign: "top",
+      whiteSpace: "nowrap",
+    },
+    hr: { border: 0, height: 1, background: "rgba(15,23,42,.08)", margin: "12px 0" },
   };
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
@@ -1298,7 +1676,7 @@ export default function App() {
               }}
             >
               <div style={{ fontWeight: 900 }}>
-                名單匯入/匯出（格式：名字/性別，一行一筆）
+                名單匯入/匯出（每行一筆）
               </div>
               <button
                 className={`${ctl} ${ctlPad}`}
@@ -1310,9 +1688,20 @@ export default function App() {
             </div>
 
             <div style={{ ...ui.micro, marginBottom: 8 }}>
-              範例：<br />
-              靜儀/女<br />
-              阿宏/男
+              格式：
+              <br />
+              1) 名字/性別/分類(季繳或臨打或季繳請假)
+              <br />
+              2) 若分類=季繳請假：名字/性別/季繳請假/替補名字/替補性別
+              <br />
+              <br />
+              範例：
+              <br />
+              周杰倫/男/季繳
+              <br />
+              林俊傑/男/季繳請假/田馥甄/女
+              <br />
+              王心凌/女/臨打
             </div>
 
             <textarea
@@ -1320,7 +1709,9 @@ export default function App() {
               style={ui.textarea}
               value={rosterText}
               onChange={(e) => setRosterText(e.target.value)}
-              placeholder={"靜儀/女\n阿宏/男"}
+              placeholder={
+                "周杰倫/男/季繳\n蔡依林/女/季繳\n林俊傑/男/季繳請假/田馥甄/女\n王心凌/女/臨打"
+              }
             />
 
             <div
@@ -1346,6 +1737,231 @@ export default function App() {
               >
                 匯入（覆蓋名單並重置）
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ===== 收費 Modal ===== */}
+      {chargeOpen ? (
+        <div
+          style={ui.modalMask}
+          onClick={() => setChargeOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div style={ui.modal} onClick={(e) => e.stopPropagation()}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ fontWeight: 900 }}>收費清單</div>
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={() => setChargeOpen(false)}
+              >
+                關閉
+              </button>
+            </div>
+
+            {/* 2-1 人員收費 */}
+            <div style={{ ...ui.card, padding: 10 }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>人員收費</div>
+
+              <div
+                className="formRow"
+                style={{ ...ui.formRow, marginBottom: 10 }}
+              >
+                <span style={ui.badge}>日期 {today}</span>
+                <span style={ui.badge}>總人數 {chargeRows.length}</span>
+
+                <div style={{ flex: 1 }} />
+
+                <span style={ui.micro}>分類費用設定：</span>
+
+                <input
+                  className={`${ctl} ${ctlPad}`}
+                  style={{ ...ui.input, width: 110 }}
+                  inputMode="numeric"
+                  placeholder="季繳"
+                  value={state.config.feeSeason}
+                  onChange={(e) => setCategoryFee("season", e.target.value)}
+                />
+                <input
+                  className={`${ctl} ${ctlPad}`}
+                  style={{ ...ui.input, width: 110 }}
+                  inputMode="numeric"
+                  placeholder="臨打"
+                  value={state.config.feeCasual}
+                  onChange={(e) => setCategoryFee("casual", e.target.value)}
+                />
+                <input
+                  className={`${ctl} ${ctlPad}`}
+                  style={{ ...ui.input, width: 110 }}
+                  inputMode="numeric"
+                  placeholder="季繳請假"
+                  value={state.config.feeLeave}
+                  onChange={(e) => setCategoryFee("leave", e.target.value)}
+                />
+              </div>
+
+              <div style={{ overflowX: "auto" }}>
+                <table style={ui.table}>
+                  <thead>
+                    <tr>
+                      <th style={ui.th}>Seq</th>
+                      <th style={ui.th}>分類</th>
+                      <th style={ui.th}>名字</th>
+                      <th style={ui.th}>性別</th>
+                      <th style={ui.th}>季繳替補</th>
+                      <th style={ui.th}>替補性別</th>
+                      <th style={ui.th}>費用</th>
+                      <th style={ui.th}>已收費</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chargeRows.map((p, idx) => {
+                      const cat = normalizeCategoryText(p.category);
+                      const fee = feeByCategory(cat);
+                      const paid = !!state.payments?.[p.id];
+
+                      return (
+                        <tr key={p.id}>
+                          <td style={ui.td}>{idx + 1}</td>
+                          <td style={ui.td}>{cat}</td>
+                          <td style={ui.td}>{String(p.origName ?? p.name ?? "")}</td>
+                          <td style={ui.td}>{String(p.origGender ?? p.gender ?? "")}</td>
+                          <td style={ui.td}>{String(p.subName ?? "")}</td>
+                          <td style={ui.td}>{String(p.subGender ?? "")}</td>
+                          <td style={ui.td}>{fee}</td>
+                          <td style={ui.td}>
+                            <input
+                              type="checkbox"
+                              checked={paid}
+                              onChange={() => togglePaid(p.id)}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+                <div style={ui.micro}>
+                  小計（依分類）：
+                  季繳 {chargeTotals.season}｜臨打 {chargeTotals.casual}｜季繳請假{" "}
+                  {chargeTotals.leave}
+                </div>
+                <div style={ui.micro}>
+                  總計（全部）{chargeTotals.total}｜已收費合計（勾選者）{chargeTotals.collected}
+                </div>
+              </div>
+            </div>
+
+            <div style={ui.hr} />
+
+            {/* 2-2 用球紀錄 */}
+            <div style={{ ...ui.card, padding: 10 }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>用球紀錄</div>
+
+              <div className="formRow" style={ui.formRow}>
+                <span style={ui.badge}>日期 {today}</span>
+
+                <span style={ui.micro}>用球數：</span>
+                <input
+                  className={`${ctl} ${ctlPad}`}
+                  style={{ ...ui.input, width: 90 }}
+                  inputMode="numeric"
+                  placeholder="X桶"
+                  value={state.ball?.buckets ?? ""}
+                  onChange={(e) => setBallField("buckets", e.target.value)}
+                />
+                <span style={ui.micro}>桶</span>
+                <input
+                  className={`${ctl} ${ctlPad}`}
+                  style={{ ...ui.input, width: 90 }}
+                  inputMode="numeric"
+                  placeholder="Y顆"
+                  value={state.ball?.balls ?? ""}
+                  onChange={(e) => setBallField("balls", e.target.value)}
+                />
+                <span style={ui.micro}>顆</span>
+
+                <div style={{ width: 16 }} />
+
+                <span style={ui.micro}>金額：</span>
+                <input
+                  className={`${ctl} ${ctlPad}`}
+                  style={{ ...ui.input, width: 120 }}
+                  inputMode="numeric"
+                  placeholder="Z元"
+                  value={state.ball?.amount ?? ""}
+                  onChange={(e) => setBallField("amount", e.target.value)}
+                />
+                <span style={ui.micro}>元</span>
+              </div>
+
+              <div style={{ marginTop: 8, ...ui.micro }}>
+                顯示：{String(state.ball?.buckets || 0)}桶{String(state.ball?.balls || 0)}顆｜{String(state.ball?.amount || 0)}元
+              </div>
+            </div>
+
+            <div style={ui.hr} />
+
+            {/* 2-3 歷史清單 */}
+            <div style={{ ...ui.card, padding: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ fontWeight: 900 }}>歷史清單</div>
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={saveTodayToHistory}
+                  title="把今天的「人員收費小計/總計」與「用球紀錄」存到歷史（同日期會覆蓋）"
+                >
+                  保存今天到歷史
+                </button>
+              </div>
+
+              {state.dailyHistory?.length ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {state.dailyHistory.map((h) => (
+                    <div key={h.date} style={{ ...ui.card, padding: 10, boxShadow: "none" }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={ui.badge}>{h.date}</span>
+                        <span style={ui.badge}>人數 {h.totalPeople}</span>
+                        <span style={ui.badge}>
+                          小計：季繳 {h.subtotal.season}｜臨打 {h.subtotal.casual}｜季繳請假 {h.subtotal.leave}
+                        </span>
+                        <span style={ui.badge}>總計 {h.subtotal.total}</span>
+                        <span style={ui.badge}>已收費 {h.subtotal.collected}</span>
+                      </div>
+                      <div style={{ marginTop: 6, ...ui.micro }}>
+                        用球：{String(h.ball?.buckets || 0)}桶{String(h.ball?.balls || 0)}顆｜金額 {String(h.ball?.amount || 0)} 元
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={ui.micro}>（目前沒有歷史紀錄）</div>
+              )}
             </div>
           </div>
         </div>
@@ -1408,14 +2024,14 @@ export default function App() {
             <h2 style={ui.h2}>早安羽球排點系統</h2>
             <span style={ui.badge}>總人數 {totalPeople}</span>
 
-            {/* ✅ 費用顯示：長按 3 秒設定 */}
+            {/* 舊：費用顯示（長按 3 秒設定） */}
             <span
               style={{
                 ...ui.badge,
                 cursor: "pointer",
                 borderColor: "rgba(244,63,94,.25)",
               }}
-              title="長按 3 秒設定臨打費用/繳費"
+              title="長按 3 秒設定臨打費用/繳費（僅顯示在頂部）"
               onMouseDown={startFeePress}
               onMouseUp={cancelFeePress}
               onMouseLeave={cancelFeePress}
@@ -1481,6 +2097,16 @@ export default function App() {
             title="名單匯入/匯出"
           >
             名單
+          </button>
+
+          {/* ✅ 新：收費按鈕 */}
+          <button
+            className={`${ctl} ${ctlPad}`}
+            style={ui.btnSoft}
+            onClick={openChargeModal}
+            title="收費清單 / 用球紀錄 / 歷史"
+          >
+            收費
           </button>
         </div>
       </div>
@@ -1713,7 +2339,7 @@ export default function App() {
           <div style={ui.sectionTitle}>
             <span>休息區</span>
 
-            {/* ✅ 右側按鈕群 */}
+            {/* 右側按鈕群 */}
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
                 className={`${state.ui.showDelete ? ctlDanger : ctl} ${ctlPad}`}
@@ -1777,6 +2403,9 @@ export default function App() {
                       新增
                     </button>
                   </div>
+                  <div style={{ marginTop: 8, ...ui.micro }}>
+                    新增隊員預設分類＝臨打（需要分類/請假替補請用「名單匯入/匯出」）
+                  </div>
                 </div>
 
                 {/* 名單區 */}
@@ -1810,7 +2439,7 @@ export default function App() {
                           <span style={ui.pill}>{p.games}</span>
                         </div>
 
-                        {/* ✅ 刪除按鈕：預設不顯示，開啟「刪除：開」才顯示 */}
+                        {/* 刪除按鈕 */}
                         {state.ui.showDelete ? (
                           <button
                             className={`${ctl} ${ctlPad}`}
