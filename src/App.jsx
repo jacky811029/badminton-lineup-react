@@ -104,7 +104,6 @@ function initialState() {
       showCourts: true,
       showQueues: true,
       showBench: true,
-      deleteMode: false, // ✅ 刪除模式：預設關
     },
     config: {
       feeText: "",
@@ -179,10 +178,6 @@ function normalize(st) {
       typeof next.ui?.showBench === "boolean"
         ? next.ui.showBench
         : base.ui.showBench,
-    deleteMode:
-      typeof next.ui?.deleteMode === "boolean"
-        ? next.ui.deleteMode
-        : base.ui.deleteMode,
   };
 
   next.config = {
@@ -554,15 +549,9 @@ export default function App() {
   function startFeePress() {
     if (feePressTimerRef.current) clearTimeout(feePressTimerRef.current);
     feePressTimerRef.current = setTimeout(() => {
-      const fee = prompt(
-        "請輸入臨打費用（例如：150）",
-        state.config?.feeText || ""
-      );
+      const fee = prompt("請輸入臨打費用（例如：150）", state.config?.feeText || "");
       if (fee === null) return;
-      const payTo = prompt(
-        "請輸入繳費給（例如：阿宏）",
-        state.config?.payTo || ""
-      );
+      const payTo = prompt("請輸入繳費給（例如：阿宏）", state.config?.payTo || "");
       if (payTo === null) return;
 
       applyState((prev) => {
@@ -578,15 +567,6 @@ export default function App() {
       clearTimeout(feePressTimerRef.current);
       feePressTimerRef.current = null;
     }
-  }
-
-  // ✅ 刪除模式切換：預設關
-  function toggleDeleteMode() {
-    applyState((prev) => {
-      const next = structuredClone(normalize(prev));
-      next.ui.deleteMode = !next.ui.deleteMode;
-      return next;
-    });
   }
 
   // ===== 人員操作 =====
@@ -1155,22 +1135,12 @@ export default function App() {
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
 
-  // ✅ 選取綠框：完整、粗、外光暈
+  // ✅ 選取綠框：完整、粗、外光暈（不會被圓角吃掉）
   const selectedRing = {
     border: "2px solid rgba(34,197,94,.95)",
     boxShadow:
       "0 0 0 3px rgba(34,197,94,.35), 0 10px 25px rgba(34,197,94,.18)",
   };
-
-  // ✅ 個別隊員名稱上方的小 toast（顯示「已選擇」）
-  function PlayerName({ name, isSelected, style, max = 7 }) {
-    return (
-      <span className="pToastWrap" style={style}>
-        {isSelected ? <span className="pToast">已選擇</span> : null}
-        {shortName(name, max)}
-      </span>
-    );
-  }
 
   // GitHub Pages/全域 CSS 可能把控制項文字弄成透明或 font-size=0，這裡強制修正
   const ctl = "ctlTextFix";
@@ -1279,26 +1249,21 @@ export default function App() {
           opacity: 1 !important;
         }
 
-        /* ✅ 個別隊員名稱上方小 toast */
-        .pToastWrap{
-          position: relative;
-          display: inline-flex;
-          align-items: center;
-          min-width: 0;
+        /* ✅ 右上角小 Toast（不佔版面、不推擠 layout） */
+        .selectedToast {
+          position: fixed;
+          top: 68px; /* 避開標題列 */
+          right: 14px;
+          z-index: 9998;
+          pointer-events: none; /* 不擋下面操作 */
         }
-        .pToast{
-          position: absolute;
-          top: -16px;
-          left: 0;
-          background: rgba(15,23,42,.92);
-          color: #fff;
-          font-size: 11px;
-          font-weight: 900;
-          padding: 2px 8px;
-          border-radius: 999px;
-          box-shadow: 0 10px 25px rgba(15,23,42,.25);
-          pointer-events: none;
-          white-space: nowrap;
+        .selectedToastInner {
+          pointer-events: auto; /* 內部按鈕可點 */
+          width: min(420px, calc(100vw - 28px));
+        }
+        @media (max-width: 560px) {
+          .selectedToast { top: 92px; right: 10px; }
+          .selectedToastInner { width: calc(100vw - 20px); }
         }
       `}</style>
 
@@ -1375,6 +1340,48 @@ export default function App() {
         </div>
       ) : null}
 
+      {/* ✅ 右上角小 Toast：已選擇（不影響版面） */}
+      {selectedPlayer ? (
+        <div className="selectedToast">
+          <div className="selectedToastInner">
+            <div style={{ ...ui.card, padding: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ fontWeight: 900, flex: "1 1 auto", minWidth: 120 }}>
+                  已選擇：{selectedPlayer.name}
+                </div>
+
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() => setSelectedId("")}
+                >
+                  取消
+                </button>
+
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() => placeSelected({ type: "bench" })}
+                >
+                  放回
+                </button>
+              </div>
+
+              <div style={{ ...ui.micro, marginTop: 6 }}>
+                點目的地格子放置；點到有人會交換並跳確認
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="topBar" style={ui.topBar}>
         <div style={{ flex: 1, minWidth: 260 }}>
           <div
@@ -1386,7 +1393,6 @@ export default function App() {
             }}
           >
             <h2 style={ui.h2}>早安羽球排點系統</h2>
-
             <span style={ui.badge}>總人數 {totalPeople}</span>
 
             {/* ✅ 費用顯示：長按 3 秒設定 */}
@@ -1580,11 +1586,9 @@ export default function App() {
                                   flexWrap: "nowrap",
                                 }}
                               >
-                                <PlayerName
-                                  name={p.name}
-                                  isSelected={pid === selectedId}
-                                  style={ui.nameStyle}
-                                />
+                                <span style={ui.nameStyle}>
+                                  {shortName(p.name, 7)}
+                                </span>
                                 <span style={ui.pill}>{p.games}</span>
                               </div>
                             ) : (
@@ -1673,11 +1677,9 @@ export default function App() {
                                 flexWrap: "nowrap",
                               }}
                             >
-                              <PlayerName
-                                name={p.name}
-                                isSelected={pid === selectedId}
-                                style={ui.nameStyle}
-                              />
+                              <span style={ui.nameStyle}>
+                                {shortName(p.name, 7)}
+                              </span>
                               <span style={ui.pill}>{p.games}</span>
                             </div>
                           ) : (
@@ -1697,31 +1699,13 @@ export default function App() {
         <div className="benchSticky">
           <div style={ui.sectionTitle}>
             <span>休息區</span>
-
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {/* ✅ 刪除模式開關：預設關 */}
-              <button
-                className={`${ctl} ${ctlPad}`}
-                style={{
-                  ...ui.btnSoft,
-                  borderColor: state.ui.deleteMode
-                    ? "rgba(244,63,94,.35)"
-                    : "rgba(15,23,42,.10)",
-                }}
-                onClick={toggleDeleteMode}
-                title="刪除按鈕開關（預設關）"
-              >
-                刪除：{state.ui.deleteMode ? "開" : "關"}
-              </button>
-
-              <button
-                className={`${ctl} ${ctlPad}`}
-                style={ui.btnSoft}
-                onClick={() => toggleSection("bench")}
-              >
-                {state.ui.showBench ? "收折" : "展開"}
-              </button>
-            </div>
+            <button
+              className={`${ctl} ${ctlPad}`}
+              style={ui.btnSoft}
+              onClick={() => toggleSection("bench")}
+            >
+              {state.ui.showBench ? "收折" : "展開"}
+            </button>
           </div>
 
           <div
@@ -1794,27 +1778,22 @@ export default function App() {
                             flexWrap: "nowrap",
                           }}
                         >
-                          <PlayerName
-                            name={p.name}
-                            isSelected={p.id === selectedId}
-                            style={ui.nameStyle}
-                          />
+                          <span style={ui.nameStyle}>
+                            {shortName(p.name, 7)}
+                          </span>
                           <span style={ui.pill}>{p.games}</span>
                         </div>
 
-                        {/* ✅ 只有刪除模式=開 才顯示 */}
-                        {state.ui.deleteMode ? (
-                          <button
-                            className={`${ctl} ${ctlPad}`}
-                            style={ui.btn}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removePlayer(p.id);
-                            }}
-                          >
-                            刪
-                          </button>
-                        ) : null}
+                        <button
+                          className={`${ctl} ${ctlPad}`}
+                          style={ui.btn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removePlayer(p.id);
+                          }}
+                        >
+                          刪
+                        </button>
                       </div>
                     ))}
                   </div>
