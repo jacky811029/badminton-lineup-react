@@ -586,7 +586,7 @@ export default function App() {
     applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.players[id] = p;
-      benchPushFront(next, id); // ✅
+      benchPushFront(next, id);
       return next;
     });
 
@@ -690,7 +690,7 @@ export default function App() {
 
       if (target.type === "bench") {
         removeEverywhere(next, id);
-        benchPushFront(next, id); // ✅
+        benchPushFront(next, id);
         return next;
       }
 
@@ -740,7 +740,7 @@ export default function App() {
       if (target.type === "queue") {
         const replaced = next.queues[target.gi][target.si];
         next.queues[target.gi][target.si] = id;
-        if (replaced) benchPushFront(next, replaced); // ✅
+        if (replaced) benchPushFront(next, replaced);
         return next;
       }
 
@@ -748,7 +748,7 @@ export default function App() {
         const court = next.courts[target.ci];
         const replaced = court.slots[target.si];
         court.slots[target.si] = id;
-        if (replaced) benchPushFront(next, replaced); // ✅
+        if (replaced) benchPushFront(next, replaced);
         ensureCourtTimer(court);
         return next;
       }
@@ -799,7 +799,7 @@ export default function App() {
 
       if (target.type === "bench") {
         removeEverywhere(next, id);
-        benchPushFront(next, id); // ✅
+        benchPushFront(next, id);
         return next;
       }
 
@@ -849,7 +849,7 @@ export default function App() {
       if (target.type === "queue") {
         const replaced = next.queues[target.gi][target.si];
         next.queues[target.gi][target.si] = id;
-        if (replaced) benchPushFront(next, replaced); // ✅
+        if (replaced) benchPushFront(next, replaced);
         return next;
       }
 
@@ -857,7 +857,7 @@ export default function App() {
         const court = next.courts[target.ci];
         const replaced = court.slots[target.si];
         court.slots[target.si] = id;
-        if (replaced) benchPushFront(next, replaced); // ✅
+        if (replaced) benchPushFront(next, replaced);
         ensureCourtTimer(court);
         return next;
       }
@@ -888,7 +888,7 @@ export default function App() {
         }
       }
 
-      for (const pid of hadPlayers) benchPushFront(next, pid); // ✅
+      for (const pid of hadPlayers) benchPushFront(next, pid);
 
       court.slots = ["", "", "", ""];
       court.startTs = 0;
@@ -1135,6 +1135,13 @@ export default function App() {
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
 
+  // ✅ 選取綠框：完整、粗、外光暈（不會被圓角吃掉）
+  const selectedRing = {
+    border: "2px solid rgba(34,197,94,.95)",
+    boxShadow:
+      "0 0 0 3px rgba(34,197,94,.35), 0 10px 25px rgba(34,197,94,.18)",
+  };
+
   // GitHub Pages/全域 CSS 可能把控制項文字弄成透明或 font-size=0，這裡強制修正
   const ctl = "ctlTextFix";
   const ctlDanger = "ctlTextFixDanger";
@@ -1241,6 +1248,23 @@ export default function App() {
           -webkit-text-fill-color: rgba(100,116,139,.9) !important;
           opacity: 1 !important;
         }
+
+        /* ✅ 右上角小 Toast（不佔版面、不推擠 layout） */
+        .selectedToast {
+          position: fixed;
+          top: 68px; /* 避開標題列 */
+          right: 14px;
+          z-index: 9998;
+          pointer-events: none; /* 不擋下面操作 */
+        }
+        .selectedToastInner {
+          pointer-events: auto; /* 內部按鈕可點 */
+          width: min(420px, calc(100vw - 28px));
+        }
+        @media (max-width: 560px) {
+          .selectedToast { top: 92px; right: 10px; }
+          .selectedToastInner { width: calc(100vw - 20px); }
+        }
       `}</style>
 
       {/* ===== 名單匯入/匯出 Modal ===== */}
@@ -1311,6 +1335,48 @@ export default function App() {
               >
                 匯入（覆蓋名單並重置）
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ✅ 右上角小 Toast：已選擇（不影響版面） */}
+      {selectedPlayer ? (
+        <div className="selectedToast">
+          <div className="selectedToastInner">
+            <div style={{ ...ui.card, padding: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ fontWeight: 900, flex: "1 1 auto", minWidth: 120 }}>
+                  已選擇：{selectedPlayer.name}
+                </div>
+
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() => setSelectedId("")}
+                >
+                  取消
+                </button>
+
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() => placeSelected({ type: "bench" })}
+                >
+                  放回
+                </button>
+              </div>
+
+              <div style={{ ...ui.micro, marginTop: 6 }}>
+                點目的地格子放置；點到有人會交換並跳確認
+              </div>
             </div>
           </div>
         </div>
@@ -1406,41 +1472,6 @@ export default function App() {
         </div>
       </div>
 
-      {selectedPlayer ? (
-        <div
-          className="cardBox"
-          style={{ ...ui.card, padding: 10, marginBottom: 10 }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ fontWeight: 900 }}>
-              已選擇：{selectedPlayer.name}
-              （點目的地格子放置 / 點到有人會交換並跳確認）
-            </div>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => setSelectedId("")}
-            >
-              取消選取
-            </button>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => placeSelected({ type: "bench" })}
-            >
-              放回休息區
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       <div className="layout">
         {/* Left */}
         <div>
@@ -1531,11 +1562,7 @@ export default function App() {
                             style={{
                               ...ui.slot,
                               background: bg,
-                              outline:
-                                pid && pid === selectedId
-                                  ? "3px solid rgba(34,197,94,.85)"
-                                  : "none",
-                              outlineOffset: 2,
+                              ...(pid && pid === selectedId ? selectedRing : null),
                             }}
                             onDragOver={allowDrop}
                             onDrop={(e) => dropTo(e, { type: "court", ci, si })}
@@ -1626,11 +1653,7 @@ export default function App() {
                           style={{
                             ...ui.slot,
                             background: bg,
-                            outline:
-                              pid && pid === selectedId
-                                ? "3px solid rgba(34,197,94,.85)"
-                                : "none",
-                            outlineOffset: 2,
+                            ...(pid && pid === selectedId ? selectedRing : null),
                           }}
                           onDragOver={allowDrop}
                           onDrop={(e) => dropTo(e, { type: "queue", gi, si })}
@@ -1743,11 +1766,7 @@ export default function App() {
                         style={{
                           ...ui.benchItem,
                           background: genderBg(p.gender),
-                          outline:
-                            p.id && p.id === selectedId
-                              ? "3px solid rgba(34,197,94,.85)"
-                              : "none",
-                          outlineOffset: 2,
+                          ...(p.id && p.id === selectedId ? selectedRing : null),
                         }}
                       >
                         <div
