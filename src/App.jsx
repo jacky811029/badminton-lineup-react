@@ -232,6 +232,13 @@ function removeEverywhere(next, id) {
   });
 }
 
+// ✅ 防止重複塞回休息區（修正下場後短暫重複顯示）
+function benchPushFront(next, pid) {
+  if (!pid) return;
+  next.bench = next.bench.filter((x) => x !== pid);
+  next.bench.unshift(pid);
+}
+
 function locatePlayer(st, id) {
   if (!id) return null;
 
@@ -361,7 +368,6 @@ function normalizeGenderText(g) {
   const s = String(g || "").trim();
   if (s === "女") return "女";
   if (s === "男") return "男";
-  // 允許使用者輸入 F/M、female/male（簡單支援）
   const low = s.toLowerCase();
   if (low === "f" || low === "female") return "女";
   if (low === "m" || low === "male") return "男";
@@ -580,7 +586,7 @@ export default function App() {
     applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.players[id] = p;
-      next.bench.unshift(id);
+      benchPushFront(next, id); // ✅
       return next;
     });
 
@@ -684,7 +690,7 @@ export default function App() {
 
       if (target.type === "bench") {
         removeEverywhere(next, id);
-        next.bench.unshift(id);
+        benchPushFront(next, id); // ✅
         return next;
       }
 
@@ -734,7 +740,7 @@ export default function App() {
       if (target.type === "queue") {
         const replaced = next.queues[target.gi][target.si];
         next.queues[target.gi][target.si] = id;
-        if (replaced) next.bench.unshift(replaced);
+        if (replaced) benchPushFront(next, replaced); // ✅
         return next;
       }
 
@@ -742,7 +748,7 @@ export default function App() {
         const court = next.courts[target.ci];
         const replaced = court.slots[target.si];
         court.slots[target.si] = id;
-        if (replaced) next.bench.unshift(replaced);
+        if (replaced) benchPushFront(next, replaced); // ✅
         ensureCourtTimer(court);
         return next;
       }
@@ -793,7 +799,7 @@ export default function App() {
 
       if (target.type === "bench") {
         removeEverywhere(next, id);
-        next.bench.unshift(id);
+        benchPushFront(next, id); // ✅
         return next;
       }
 
@@ -843,7 +849,7 @@ export default function App() {
       if (target.type === "queue") {
         const replaced = next.queues[target.gi][target.si];
         next.queues[target.gi][target.si] = id;
-        if (replaced) next.bench.unshift(replaced);
+        if (replaced) benchPushFront(next, replaced); // ✅
         return next;
       }
 
@@ -851,7 +857,7 @@ export default function App() {
         const court = next.courts[target.ci];
         const replaced = court.slots[target.si];
         court.slots[target.si] = id;
-        if (replaced) next.bench.unshift(replaced);
+        if (replaced) benchPushFront(next, replaced); // ✅
         ensureCourtTimer(court);
         return next;
       }
@@ -882,7 +888,7 @@ export default function App() {
         }
       }
 
-      for (const pid of hadPlayers) next.bench.unshift(pid);
+      for (const pid of hadPlayers) benchPushFront(next, pid); // ✅
 
       court.slots = ["", "", "", ""];
       court.startTs = 0;
@@ -908,7 +914,11 @@ export default function App() {
 
   // ===== 顯示資料 =====
   const benchPlayers = useMemo(() => {
-    return state.bench.map((id) => state.players[id]).filter(Boolean);
+    const seen = new Set();
+    return state.bench
+      .filter((id) => state.players[id])
+      .filter((id) => (seen.has(id) ? false : (seen.add(id), true)))
+      .map((id) => state.players[id]);
   }, [state.players, state.bench]);
 
   const totalPeople = useMemo(() => {
@@ -1339,10 +1349,11 @@ export default function App() {
           </div>
 
           <div style={ui.hint}>
-            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或<span style={{ color: "#EF4444", fontWeight: 900 }}>點選</span>人 → 點格子放置（建議用點選）｜
+            上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或
+            <span style={{ color: "#EF4444", fontWeight: 900 }}>點選</span>人 →
+            點格子放置（建議用點選）｜
             固定格互換會先確認｜下場自動補位＋推進｜各區塊自動依性別/姓名排序
           </div>
-
         </div>
 
         {/* ===== Controls ===== */}
@@ -1769,7 +1780,8 @@ export default function App() {
                   </div>
 
                   <div style={{ marginTop: 10, ...ui.micro }}>
-                    下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 → 本場重新計時
+                    下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 →
+                    本場重新計時
                   </div>
                 </div>
               </>
