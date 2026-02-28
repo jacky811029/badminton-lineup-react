@@ -104,7 +104,7 @@ function initialState() {
       showCourts: true,
       showQueues: true,
       showBench: true,
-      showDelete: false, // ✅ 刪除按鈕顯示開關：預設關
+      showDelete: false, // ✅ 刪除模式：預設關
     },
     config: {
       feeText: "",
@@ -627,7 +627,7 @@ export default function App() {
       if (key === "courts") next.ui.showCourts = !next.ui.showCourts;
       if (key === "queues") next.ui.showQueues = !next.ui.showQueues;
       if (key === "bench") next.ui.showBench = !next.ui.showBench;
-      if (key === "delete") next.ui.showDelete = !next.ui.showDelete; // ✅ 刪除模式開關
+      if (key === "delete") next.ui.showDelete = !next.ui.showDelete;
       return next;
     });
   }
@@ -1255,20 +1255,25 @@ export default function App() {
           opacity: 1 !important;
         }
 
-        /* ✅ 右上角小 Toast（不佔版面、不推擠 layout） */
+        /* ✅ 置中 Toast（不佔版面、不推擠 layout） */
         .selectedToast {
           position: fixed;
           top: 68px; /* 避開標題列 */
-          right: 14px;
+          left: 50%;
+          transform: translateX(-50%);
           z-index: 9998;
           pointer-events: none; /* 不擋下面操作 */
         }
         .selectedToastInner {
           pointer-events: auto; /* 內部按鈕可點 */
-          width: min(420px, calc(100vw - 28px));
+          width: min(560px, calc(100vw - 28px));
+        }
+        .toastGoose {
+          background: rgba(254, 249, 213, 0.96) !important; /* 淺鵝黃 */
+          border: 1px solid rgba(245, 158, 11, 0.28) !important;
         }
         @media (max-width: 560px) {
-          .selectedToast { top: 92px; right: 10px; }
+          .selectedToast { top: 92px; }
           .selectedToastInner { width: calc(100vw - 20px); }
         }
       `}</style>
@@ -1346,20 +1351,22 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* ✅ 右上角小 Toast：已選擇（不影響版面） */}
+      {/* ✅ 置中小 Toast：已選擇（不影響版面） */}
       {selectedPlayer ? (
         <div className="selectedToast">
           <div className="selectedToastInner">
-            <div style={{ ...ui.card, padding: 10 }}>
+            <div className="toastGoose" style={{ ...ui.card, padding: 10 }}>
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
+                  justifyContent: "center",
                   gap: 8,
                   flexWrap: "wrap",
+                  textAlign: "center",
                 }}
               >
-                <div style={{ fontWeight: 900, flex: "1 1 auto", minWidth: 120 }}>
+                <div style={{ fontWeight: 900, minWidth: 120 }}>
                   已選擇：{selectedPlayer.name}
                 </div>
 
@@ -1380,7 +1387,7 @@ export default function App() {
                 </button>
               </div>
 
-              <div style={{ ...ui.micro, marginTop: 6 }}>
+              <div style={{ ...ui.micro, marginTop: 6, textAlign: "center" }}>
                 點目的地格子放置；點到有人會交換並跳確認
               </div>
             </div>
@@ -1706,7 +1713,7 @@ export default function App() {
           <div style={ui.sectionTitle}>
             <span>休息區</span>
 
-            {/* ✅ 右側多顆按鈕 */}
+            {/* ✅ 右側按鈕群 */}
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
                 className={`${state.ui.showDelete ? ctlDanger : ctl} ${ctlPad}`}
