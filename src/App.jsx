@@ -1,12 +1,18 @@
 import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 /**
- * v1.2.2 + Build time (部署時間)
+ * v1.2.1 + Build time (部署時間)
  * ✅ 補強：
- * - 休息區新增：加入「分類」(季繳/臨打/季繳請假)
- * - 若分類=季繳請假：顯示「替補名字/替補性別」欄位
+ * 1) 已收費：打勾→不打勾 需確認
+ * 2) 歷史清單：DELETE / UPDATE（編輯）
+ * 3) 人員收費表格：標頭 sticky 固定
+ * 4) 人員收費 / 用球紀錄 / 歷史清單：可收折
+ * 5) 小計/總計：千分位
+ * 6) 日期可點擊修改（人員收費/用球紀錄同步）
+ * 7) 分類費用：textbox 前保留分類名稱
+ * 8) 歷史清單：顯示各分類金額 + 各分類人數
  */
-const VERSION_NAME = "v1.2.2";
+const VERSION_NAME = "v1.2.1";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -277,7 +283,12 @@ function historyReducer(h, action) {
   }
 }
 
-/** ===== 名單匯入/匯出 ===== */
+/** ===== 名單匯入/匯出 =====
+ * 格式：
+ * 名字/性別/分類
+ * 或
+ * 名字/性別/季繳請假/替補名字/替補性別
+ */
 function normalizeGenderText(g) {
   const s = String(g || "").trim();
   if (s === "女") return "女";
@@ -355,7 +366,7 @@ function rosterToText(playersMap) {
 function buildPlayersFromRosterRows(rows) {
   const players = {};
   const bench = [];
-  const payments = {};
+  const payments = {}; // 已收費預設：季繳=true，其它=false
 
   const nameCount = new Map();
 
@@ -366,6 +377,7 @@ function buildPlayersFromRosterRows(rows) {
 
     if (!origNameRaw) return;
 
+    // ✅ 若為季繳請假：顯示名單用替補名字/性別取代（但仍保留原始欄位給收費表）
     const effectiveNameBase =
       category === "季繳請假" && String(r.subName || "").trim()
         ? String(r.subName || "").trim()
@@ -376,10 +388,10 @@ function buildPlayersFromRosterRows(rows) {
         ? normalizeGenderText(r.subGender || "男")
         : origGenderRaw;
 
+    // 同名處理（以「顯示名」為準）
     const c = (nameCount.get(effectiveNameBase) || 0) + 1;
     nameCount.set(effectiveNameBase, c);
-    const effectiveName =
-      c === 1 ? effectiveNameBase : `${effectiveNameBase}(${c})`;
+    const effectiveName = c === 1 ? effectiveNameBase : `${effectiveNameBase}(${c})`;
 
     const id = `i${String(idx + 1).padStart(3, "0")}_${uid()}`;
 
@@ -391,9 +403,11 @@ function buildPlayersFromRosterRows(rows) {
 
     players[id] = {
       id,
+      // 顯示用（休息區/上場/排隊）
       name: effectiveName,
       gender: effectiveGender,
 
+      // 收費/匯出用（保留原始欄位）
       category,
       origName: origNameRaw,
       origGender: origGenderRaw,
@@ -421,7 +435,7 @@ function buildDefaultPlayersAndBench() {
     const id = `d${String(i + 1).padStart(3, "0")}`;
     const name = String(r.name || "").trim();
     const gender = r.gender === "女" ? "女" : "男";
-    const category = "臨打";
+    const category = "臨打"; // 預設
 
     players[id] = {
       id,
@@ -463,11 +477,14 @@ function initialState() {
       showDelete: false,
     },
     config: {
+      // 舊：頂部顯示用
       feeText: "",
       payTo: "",
-      feeSeason: "",
-      feeCasual: "",
-      feeLeave: "",
+
+      // 收費表各分類費用
+      feeSeason: "", // 季繳
+      feeCasual: "", // 臨打
+      feeLeave: "", // 季繳請假
     },
 
     payments,
@@ -478,6 +495,8 @@ function initialState() {
       amount: "",
     },
 
+    // ✅ 歷史（日期 + 小計/總計 + 用球）
+    // counts: { season, casual, leave }
     dailyHistory: [],
   };
 }
@@ -589,14 +608,12 @@ function normalize(st) {
     feeLeave: String(next.config?.feeLeave ?? base.config.feeLeave),
   };
 
-  const pay =
-    next.payments && typeof next.payments === "object" ? next.payments : {};
+  const pay = next.payments && typeof next.payments === "object" ? next.payments : {};
   next.payments = {};
   for (const id of Object.keys(next.players)) {
     const v = pay[id];
     if (typeof v === "boolean") next.payments[id] = v;
-    else next.payments[id] =
-      normalizeCategoryText(next.players[id]?.category) === "季繳";
+    else next.payments[id] = normalizeCategoryText(next.players[id]?.category) === "季繳";
   }
 
   next.ball = {
@@ -621,9 +638,7 @@ function normalize(st) {
         leave: typeof x?.subtotal?.leave === "number" ? x.subtotal.leave : 0,
         total: typeof x?.subtotal?.total === "number" ? x.subtotal.total : 0,
         collected:
-          typeof x?.subtotal?.collected === "number"
-            ? x.subtotal.collected
-            : 0,
+          typeof x?.subtotal?.collected === "number" ? x.subtotal.collected : 0,
       },
       ball: {
         buckets: String(x?.ball?.buckets ?? ""),
@@ -694,12 +709,6 @@ export default function App() {
   // ===== 基本 UI state =====
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
-
-  // ✅ 新：新增分類 +（季繳請假）替補欄位
-  const [addCategory, setAddCategory] = useState("臨打");
-  const [subName, setSubName] = useState("");
-  const [subGender, setSubGender] = useState("男");
-
   const [selectedId, setSelectedId] = useState("");
   const [tick, setTick] = useState(nowSec());
 
@@ -775,12 +784,7 @@ export default function App() {
     alert("匯入完成（已重置上場/排隊）。");
   }
 
-  // ===== 收費 Modal（沿用 v1.2.1 的完整功能；此處略）=====
-  // 你目前的版本已包含：日期同步/收折/歷史更新刪除/千分位/取消勾選確認...等
-  // 為避免訊息過長，以下沿用你上一版 v1.2.1 的收費區邏輯不動
-  // ------------------ 直接把你 v1.2.1 的收費區原封不動貼回來即可 ------------------
-  // ✅ 這次改動只針對「休息區新增隊員」表單與 addPlayer() 邏輯
-
+  // ===== 收費 Modal =====
   const [chargeOpen, setChargeOpen] = useState(false);
   const today = useMemo(() => formatDateYMD(new Date()), [tick]);
   const [chargeDate, setChargeDate] = useState(today);
@@ -791,12 +795,13 @@ export default function App() {
     history: true,
   });
 
+  // 歷史編輯狀態（單筆）
   const [histEditKey, setHistEditKey] = useState("");
   const [histDraft, setHistDraft] = useState(null);
 
   useEffect(() => {
     if (chargeOpen) {
-      setChargeDate(formatDateYMD(new Date()));
+      setChargeDate(formatDateYMD(new Date())); // 預設今天
       setChargeFold({ people: true, ball: true, history: true });
       setHistEditKey("");
       setHistDraft(null);
@@ -818,19 +823,13 @@ export default function App() {
     setChargeDate(s);
   }
 
-  // ===== 費用設定：長按 3 秒（頂部顯示用）=====
+  // ===== 費用設定：長按 3 秒（舊：頂部顯示用）=====
   function startFeePress() {
     if (feePressTimerRef.current) clearTimeout(feePressTimerRef.current);
     feePressTimerRef.current = setTimeout(() => {
-      const fee = prompt(
-        "請輸入臨打費用（例如：150）",
-        state.config?.feeText || ""
-      );
+      const fee = prompt("請輸入臨打費用（例如：150）", state.config?.feeText || "");
       if (fee === null) return;
-      const payTo = prompt(
-        "請輸入繳費給（例如：阿宏）",
-        state.config?.payTo || ""
-      );
+      const payTo = prompt("請輸入繳費給（例如：阿宏）", state.config?.payTo || "");
       if (payTo === null) return;
 
       applyState((prev) => {
@@ -848,50 +847,27 @@ export default function App() {
     }
   }
 
-  // ===== 人員操作（✅ 這裡改動）=====
+  // ===== 人員操作 =====
   function addPlayer() {
     const n = name.trim();
     if (!n) return;
 
-    const cat = normalizeCategoryText(addCategory);
-    const subN = String(subName || "").trim();
-    const subG = normalizeGenderText(subGender);
-
-    // 顯示用名稱/性別：若季繳請假，顯示替補
-    const effectiveName = cat === "季繳請假" ? subN : n;
-    const effectiveGender = cat === "季繳請假" ? subG : gender;
-
-    if (cat === "季繳請假") {
-      if (!subN) {
-        alert("分類為「季繳請假」時，請填寫替補名字。");
-        return;
-      }
-    }
-
-    const exists = Object.values(state.players).some(
-      (p) => String(p.name || "").trim() === effectiveName
-    );
+    const exists = Object.values(state.players).some((p) => p.name === n);
     if (exists) {
-      alert("已有同名隊員（以顯示名判斷），請改名或加註。");
+      alert("已有同名隊員，請改名或加註。");
       return;
     }
 
     const id = uid();
-
     const p = {
       id,
-
-      // 顯示用（休息/上場/排隊）
-      name: effectiveName,
-      gender: effectiveGender,
-
-      // 收費/匯出用（原始資料）
-      category: cat,
+      name: n,
+      gender,
+      category: "臨打",
       origName: n,
       origGender: gender,
-      subName: cat === "季繳請假" ? subN : "",
-      subGender: cat === "季繳請假" ? subG : "",
-
+      subName: "",
+      subGender: "",
       games: 0,
       totalSeconds: 0,
     };
@@ -899,20 +875,12 @@ export default function App() {
     applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.players[id] = p;
-
-      // 已收費預設：季繳=true，其它=false
-      next.payments[id] = cat === "季繳";
-
+      next.payments[id] = false; // 臨打預設未收費
       benchPushFront(next, id);
       return next;
     });
 
     setName("");
-    // 保留分類/性別可連續新增，但若不是季繳請假就清掉替補欄位
-    if (cat !== "季繳請假") {
-      setSubName("");
-      setSubGender("男");
-    }
   }
 
   function removePlayer(id) {
@@ -1258,6 +1226,309 @@ export default function App() {
     return `繳費給: ${payTo}`;
   }, [state.config?.feeText, state.config?.payTo]);
 
+  // ===== 收費表資料 =====
+  function parseMoney(v) {
+    const s = String(v ?? "").trim();
+    if (!s) return 0;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function parseIntSafe(v) {
+    const s = String(v ?? "").trim();
+    if (!s) return 0;
+    const n = Number(s);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.floor(n));
+  }
+
+  function feeByCategory(cat) {
+    const c = normalizeCategoryText(cat);
+    if (c === "季繳") return parseMoney(state.config.feeSeason);
+    if (c === "季繳請假") return parseMoney(state.config.feeLeave);
+    return parseMoney(state.config.feeCasual);
+  }
+
+  const chargeRows = useMemo(() => {
+    const arr = Object.values(state.players || {});
+    arr.sort((a, b) => {
+      const ca = categoryOrder(a?.category);
+      const cb = categoryOrder(b?.category);
+      if (ca !== cb) return ca - cb;
+
+      const ga = genderOrder(a?.origGender ?? a?.gender);
+      const gb = genderOrder(b?.origGender ?? b?.gender);
+      if (ga !== gb) return ga - gb;
+
+      const na = String(a?.origName ?? a?.name ?? "");
+      const nb = String(b?.origName ?? b?.name ?? "");
+      return na.localeCompare(nb, "zh-TW", { numeric: true, sensitivity: "base" });
+    });
+    return arr;
+  }, [state.players]);
+
+  const chargeStats = useMemo(() => {
+    let seasonAmt = 0,
+      casualAmt = 0,
+      leaveAmt = 0,
+      collected = 0;
+    let seasonCount = 0,
+      casualCount = 0,
+      leaveCount = 0;
+
+    for (const p of chargeRows) {
+      const cat = normalizeCategoryText(p.category);
+      const fee = feeByCategory(cat);
+
+      if (cat === "季繳") {
+        seasonAmt += fee;
+        seasonCount += 1;
+      } else if (cat === "季繳請假") {
+        leaveAmt += fee;
+        leaveCount += 1;
+      } else {
+        casualAmt += fee;
+        casualCount += 1;
+      }
+
+      const paid = !!state.payments?.[p.id];
+      if (paid) collected += fee;
+    }
+
+    const total = seasonAmt + casualAmt + leaveAmt;
+
+    return {
+      counts: { season: seasonCount, casual: casualCount, leave: leaveCount },
+      subtotal: {
+        season: seasonAmt,
+        casual: casualAmt,
+        leave: leaveAmt,
+        total,
+        collected,
+      },
+    };
+  }, [
+    chargeRows,
+    state.payments,
+    state.config.feeSeason,
+    state.config.feeCasual,
+    state.config.feeLeave,
+  ]);
+
+  // ✅ 已收費勾選：true→false 要確認
+  function togglePaid(pid) {
+    const was = !!state.payments?.[pid];
+    if (was) {
+      const ok = confirm("要取消「已收費」嗎？（避免誤按）");
+      if (!ok) return;
+    }
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      next.payments[pid] = !was;
+      return next;
+    });
+  }
+
+  function setCategoryFee(key, v) {
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      if (key === "season") next.config.feeSeason = String(v);
+      if (key === "casual") next.config.feeCasual = String(v);
+      if (key === "leave") next.config.feeLeave = String(v);
+      return next;
+    });
+  }
+
+  function setBallField(key, v) {
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      next.ball[key] = String(v);
+      return next;
+    });
+  }
+
+  function saveDateToHistory() {
+    const date = String(chargeDate || "").trim();
+    if (!isValidYMD(date)) {
+      alert("日期格式錯誤，請先設定正確日期（YYYY/MM/DD）。");
+      return;
+    }
+
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+
+      // 依當前 players/payments/費用計算（與畫面一致）
+      const rows = Object.values(next.players || {});
+      // 排序不用在保存時做，因為我們只存合計/人數
+      let seasonAmt = 0,
+        casualAmt = 0,
+        leaveAmt = 0,
+        collected = 0;
+      let seasonCount = 0,
+        casualCount = 0,
+        leaveCount = 0;
+
+      const feeSeason = parseMoney(next.config.feeSeason);
+      const feeCasual = parseMoney(next.config.feeCasual);
+      const feeLeave = parseMoney(next.config.feeLeave);
+
+      for (const p of rows) {
+        const cat = normalizeCategoryText(p.category);
+        const fee =
+          cat === "季繳" ? feeSeason : cat === "季繳請假" ? feeLeave : feeCasual;
+
+        if (cat === "季繳") {
+          seasonAmt += fee;
+          seasonCount += 1;
+        } else if (cat === "季繳請假") {
+          leaveAmt += fee;
+          leaveCount += 1;
+        } else {
+          casualAmt += fee;
+          casualCount += 1;
+        }
+
+        if (next.payments?.[p.id]) collected += fee;
+      }
+
+      const total = seasonAmt + casualAmt + leaveAmt;
+
+      const record = {
+        date,
+        totalPeople: rows.length,
+        counts: { season: seasonCount, casual: casualCount, leave: leaveCount },
+        subtotal: {
+          season: seasonAmt,
+          casual: casualAmt,
+          leave: leaveAmt,
+          total,
+          collected,
+        },
+        ball: {
+          buckets: String(next.ball?.buckets ?? ""),
+          balls: String(next.ball?.balls ?? ""),
+          amount: String(next.ball?.amount ?? ""),
+        },
+      };
+
+      const idx = next.dailyHistory.findIndex((x) => x.date === date);
+      if (idx >= 0) next.dailyHistory[idx] = record;
+      else next.dailyHistory.push(record);
+
+      next.dailyHistory.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      return next;
+    });
+
+    alert("已保存到歷史清單（同日期會覆蓋更新）。");
+  }
+
+  function deleteHistory(date) {
+    const ok = confirm(`確定刪除歷史紀錄 ${date} 嗎？`);
+    if (!ok) return;
+
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      next.dailyHistory = (next.dailyHistory || []).filter((x) => x.date !== date);
+      return next;
+    });
+
+    if (histEditKey === date) {
+      setHistEditKey("");
+      setHistDraft(null);
+    }
+  }
+
+  function startEditHistory(item) {
+    setHistEditKey(item.date);
+    setHistDraft({
+      date: item.date,
+      totalPeople: String(item.totalPeople ?? 0),
+      seasonCount: String(item.counts?.season ?? 0),
+      casualCount: String(item.counts?.casual ?? 0),
+      leaveCount: String(item.counts?.leave ?? 0),
+      seasonAmt: String(item.subtotal?.season ?? 0),
+      casualAmt: String(item.subtotal?.casual ?? 0),
+      leaveAmt: String(item.subtotal?.leave ?? 0),
+      totalAmt: String(item.subtotal?.total ?? 0),
+      collectedAmt: String(item.subtotal?.collected ?? 0),
+      buckets: String(item.ball?.buckets ?? ""),
+      balls: String(item.ball?.balls ?? ""),
+      ballAmt: String(item.ball?.amount ?? ""),
+    });
+  }
+
+  function cancelEditHistory() {
+    setHistEditKey("");
+    setHistDraft(null);
+  }
+
+  function saveEditHistory() {
+    if (!histDraft) return;
+
+    const newDate = String(histDraft.date || "").trim();
+    if (!isValidYMD(newDate)) {
+      alert("日期格式錯誤，請使用 YYYY/MM/DD。");
+      return;
+    }
+
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      const list = Array.isArray(next.dailyHistory) ? next.dailyHistory : [];
+
+      const oldDate = histEditKey;
+      const oldIdx = list.findIndex((x) => x.date === oldDate);
+      if (oldIdx < 0) return prev;
+
+      // 若改了日期且撞到其它日期：詢問是否覆蓋
+      const existingIdx =
+        newDate !== oldDate ? list.findIndex((x) => x.date === newDate) : -1;
+      if (existingIdx >= 0) {
+        const ok = confirm(
+          `日期 ${newDate} 已存在歷史紀錄，要覆蓋它嗎？`
+        );
+        if (!ok) return prev;
+      }
+
+      const record = {
+        date: newDate,
+        totalPeople: parseIntSafe(histDraft.totalPeople),
+        counts: {
+          season: parseIntSafe(histDraft.seasonCount),
+          casual: parseIntSafe(histDraft.casualCount),
+          leave: parseIntSafe(histDraft.leaveCount),
+        },
+        subtotal: {
+          season: parseMoney(histDraft.seasonAmt),
+          casual: parseMoney(histDraft.casualAmt),
+          leave: parseMoney(histDraft.leaveAmt),
+          total: parseMoney(histDraft.totalAmt),
+          collected: parseMoney(histDraft.collectedAmt),
+        },
+        ball: {
+          buckets: String(histDraft.buckets ?? ""),
+          balls: String(histDraft.balls ?? ""),
+          amount: String(histDraft.ballAmt ?? ""),
+        },
+      };
+
+      // 先刪舊的
+      let nextList = list.filter((x) => x.date !== oldDate);
+
+      // 若覆蓋其它日期：也刪掉那筆
+      if (existingIdx >= 0) {
+        nextList = nextList.filter((x) => x.date !== newDate);
+      }
+
+      nextList.push(record);
+      nextList.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      next.dailyHistory = nextList;
+
+      return next;
+    });
+
+    alert("歷史紀錄已更新。");
+    cancelEditHistory();
+  }
+
   // ===== Styles =====
   const ui = {
     page: {
@@ -1457,6 +1728,34 @@ export default function App() {
       background: "rgba(248,250,252,.95)",
       boxSizing: "border-box",
     },
+    table: {
+      width: "100%",
+      borderCollapse: "separate",
+      borderSpacing: 0,
+      fontSize: 13,
+      overflow: "hidden",
+      borderRadius: 14,
+      border: "1px solid rgba(15,23,42,.10)",
+      background: "rgba(255,255,255,.90)",
+    },
+    th: {
+      textAlign: "left",
+      padding: "8px 10px",
+      borderBottom: "1px solid rgba(15,23,42,.10)",
+      background: "rgba(248,250,252,.98)",
+      position: "sticky",
+      top: 0,
+      zIndex: 2,
+      whiteSpace: "nowrap",
+      fontWeight: 900,
+    },
+    td: {
+      padding: "8px 10px",
+      borderBottom: "1px solid rgba(15,23,42,.08)",
+      verticalAlign: "top",
+      whiteSpace: "nowrap",
+    },
+    hr: { border: 0, height: 1, background: "rgba(15,23,42,.08)", margin: "12px 0" },
   };
 
   const EmptySlot = () => <span style={ui.ghostDot}>.</span>;
@@ -1471,6 +1770,7 @@ export default function App() {
   const ctlDanger = "ctlTextFixDanger";
   const ctlPad = "ctlPadFix";
 
+  // ===== Undo/Redo =====
   function undo() {
     dispatch({ type: "UNDO" });
     setSelectedId("");
@@ -1480,6 +1780,7 @@ export default function App() {
     setSelectedId("");
   }
 
+  // ===== 重置：長按版本號 3 秒 =====
   function startResetPress() {
     if (resetPressTimerRef.current) clearTimeout(resetPressTimerRef.current);
     resetPressTimerRef.current = setTimeout(async () => {
@@ -1500,10 +1801,6 @@ export default function App() {
       resetPressTimerRef.current = null;
     }
   }
-
-  // ===== 收費 Modal 仍保留（為了不打斷你現有 v1.2.1 功能，這裡先維持按鈕能開）=====
-  // 若你要我把 v1.2.1 的收費 modal 全段完整合併回來，我也可以再貼一版「完整全檔」。
-  // 目前先讓主畫面與休息區新增功能可直接用。
 
   return (
     <div style={ui.page}>
@@ -1532,6 +1829,21 @@ export default function App() {
           .grid4 { grid-template-columns: 1fr; }
           .benchList2 { grid-template-columns: 1fr !important; }
         }
+
+        /* iPad Air 橫向（1024~1366）右側休息區 sticky + 緊湊化 */
+        @media (min-width: 1024px) and (max-width: 1366px) and (orientation: landscape) {
+          .layout { grid-template-columns: 1.75fr 0.75fr !important; gap: 10px !important; }
+          .grid4 { gap: 8px !important; }
+          .benchSticky { position: sticky; top: 10px; }
+          .cardBox { padding: 8px !important; border-radius: 16px !important; }
+          .benchBox { padding: 8px !important; border-radius: 16px !important; }
+          .slotBox { min-height: 30px !important; padding: 5px 7px !important; }
+          .benchItemBox { padding: 7px 9px !important; }
+          .ctlPadFix { padding: 8px 10px !important; }
+          .ctlTextFix { font-size: 13px !important; }
+          .ctlTextFixDanger { font-size: 13px !important; }
+        }
+
         .benchScrollArea{
           max-height: clamp(360px, calc(100vh - 360px), 640px);
           overflow-y: auto;
@@ -1539,6 +1851,7 @@ export default function App() {
           overscroll-behavior: contain;
           -webkit-overflow-scrolling: touch;
         }
+
         .ctlTextFix{
           color: #0F172A !important;
           -webkit-text-fill-color: #0F172A !important;
@@ -1555,6 +1868,27 @@ export default function App() {
           color: rgba(100,116,139,.9) !important;
           -webkit-text-fill-color: rgba(100,116,139,.9) !important;
           opacity: 1 !important;
+        }
+
+        .selectedToast {
+          position: fixed;
+          top: 68px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 9998;
+          pointer-events: none;
+        }
+        .selectedToastInner {
+          pointer-events: auto;
+          width: min(560px, calc(100vw - 28px));
+        }
+        .toastGoose {
+          background: rgba(254, 249, 213, 0.96) !important;
+          border: 1px solid rgba(245, 158, 11, 0.28) !important;
+        }
+        @media (max-width: 560px) {
+          .selectedToast { top: 92px; }
+          .selectedToastInner { width: calc(100vw - 20px); }
         }
       `}</style>
 
@@ -1577,7 +1911,9 @@ export default function App() {
                 marginBottom: 10,
               }}
             >
-              <div style={{ fontWeight: 900 }}>名單匯入/匯出（每行一筆）</div>
+              <div style={{ fontWeight: 900 }}>
+                名單匯入/匯出（每行一筆）
+              </div>
               <button
                 className={`${ctl} ${ctlPad}`}
                 style={ui.btnSoft}
@@ -1593,6 +1929,15 @@ export default function App() {
               1) 名字/性別/分類(季繳或臨打或季繳請假)
               <br />
               2) 若分類=季繳請假：名字/性別/季繳請假/替補名字/替補性別
+              <br />
+              <br />
+              範例：
+              <br />
+              周杰倫/男/季繳
+              <br />
+              林俊傑/男/季繳請假/田馥甄/女
+              <br />
+              王心凌/女/臨打
             </div>
 
             <textarea
@@ -1633,10 +1978,602 @@ export default function App() {
         </div>
       ) : null}
 
+      {/* ===== 收費 Modal ===== */}
+      {chargeOpen ? (
+        <div
+          style={ui.modalMask}
+          onClick={() => setChargeOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div style={ui.modal} onClick={(e) => e.stopPropagation()}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ fontWeight: 900 }}>收費清單</div>
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={() => setChargeOpen(false)}
+              >
+                關閉
+              </button>
+            </div>
+
+            {/* ✅ 共用日期（點擊可修改、同步） */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              <span
+                style={{ ...ui.badge, cursor: "pointer" }}
+                title="點一下修改日期（會同步人員收費/用球紀錄）"
+                onClick={promptChangeDate}
+              >
+                日期 {chargeDate}（點一下修改）
+              </span>
+              <span style={ui.badge}>總人數 {chargeRows.length}</span>
+              <div style={{ flex: 1 }} />
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={saveDateToHistory}
+                title="保存到歷史（同日期會覆蓋）"
+              >
+                保存到歷史
+              </button>
+            </div>
+
+            {/* 2-1 人員收費（可收折） */}
+            <div style={{ ...ui.card, padding: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginBottom: chargeFold.people ? 8 : 0,
+                }}
+              >
+                <div style={{ fontWeight: 900 }}>人員收費</div>
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() =>
+                    setChargeFold((p) => ({ ...p, people: !p.people }))
+                  }
+                >
+                  {chargeFold.people ? "收折" : "展開"}
+                </button>
+              </div>
+
+              {chargeFold.people ? (
+                <>
+                  {/* 分類費用設定：名前綴固定顯示 */}
+                  <div
+                    className="formRow"
+                    style={{ ...ui.formRow, marginBottom: 10 }}
+                  >
+                    <span style={ui.micro}>分類費用設定：</span>
+
+                    <span style={ui.badge}>季繳</span>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, width: 120 }}
+                      inputMode="numeric"
+                      placeholder="金額"
+                      value={state.config.feeSeason}
+                      onChange={(e) => setCategoryFee("season", e.target.value)}
+                    />
+
+                    <span style={ui.badge}>臨打</span>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, width: 120 }}
+                      inputMode="numeric"
+                      placeholder="金額"
+                      value={state.config.feeCasual}
+                      onChange={(e) => setCategoryFee("casual", e.target.value)}
+                    />
+
+                    <span style={ui.badge}>季繳請假</span>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, width: 120 }}
+                      inputMode="numeric"
+                      placeholder="金額"
+                      value={state.config.feeLeave}
+                      onChange={(e) => setCategoryFee("leave", e.target.value)}
+                    />
+                  </div>
+
+                  {/* 表格：header sticky */}
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={ui.table}>
+                      <thead>
+                        <tr>
+                          <th style={ui.th}>Seq</th>
+                          <th style={ui.th}>分類</th>
+                          <th style={ui.th}>名字</th>
+                          <th style={ui.th}>性別</th>
+                          <th style={ui.th}>季繳替補</th>
+                          <th style={ui.th}>替補性別</th>
+                          <th style={ui.th}>費用</th>
+                          <th style={ui.th}>已收費</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {chargeRows.map((p, idx) => {
+                          const cat = normalizeCategoryText(p.category);
+                          const fee = feeByCategory(cat);
+                          const paid = !!state.payments?.[p.id];
+
+                          return (
+                            <tr key={p.id}>
+                              <td style={ui.td}>{idx + 1}</td>
+                              <td style={ui.td}>{cat}</td>
+                              <td style={ui.td}>
+                                {String(p.origName ?? p.name ?? "")}
+                              </td>
+                              <td style={ui.td}>
+                                {String(p.origGender ?? p.gender ?? "")}
+                              </td>
+                              <td style={ui.td}>{String(p.subName ?? "")}</td>
+                              <td style={ui.td}>{String(p.subGender ?? "")}</td>
+                              <td style={ui.td}>{fmtMoney(fee)}</td>
+                              <td style={ui.td}>
+                                <input
+                                  type="checkbox"
+                                  checked={paid}
+                                  onChange={() => togglePaid(p.id)}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 小計/總計：千分位 + 人數 */}
+                  <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+                    <div style={ui.micro}>
+                      小計（依分類）：
+                      季繳 {chargeStats.counts.season}人 / {fmtMoney(chargeStats.subtotal.season)}｜
+                      臨打 {chargeStats.counts.casual}人 / {fmtMoney(chargeStats.subtotal.casual)}｜
+                      季繳請假 {chargeStats.counts.leave}人 / {fmtMoney(chargeStats.subtotal.leave)}
+                    </div>
+                    <div style={ui.micro}>
+                      總計（全部）{fmtMoney(chargeStats.subtotal.total)}｜
+                      已收費合計（勾選者）{fmtMoney(chargeStats.subtotal.collected)}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div style={ui.micro}>（已收折）</div>
+              )}
+            </div>
+
+            <div style={ui.hr} />
+
+            {/* 2-2 用球紀錄（可收折） */}
+            <div style={{ ...ui.card, padding: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginBottom: chargeFold.ball ? 8 : 0,
+                }}
+              >
+                <div style={{ fontWeight: 900 }}>用球紀錄</div>
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() => setChargeFold((p) => ({ ...p, ball: !p.ball }))}
+                >
+                  {chargeFold.ball ? "收折" : "展開"}
+                </button>
+              </div>
+
+              {chargeFold.ball ? (
+                <>
+                  <div className="formRow" style={ui.formRow}>
+                    <span style={ui.micro}>用球數：</span>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, width: 90 }}
+                      inputMode="numeric"
+                      placeholder="X桶"
+                      value={state.ball?.buckets ?? ""}
+                      onChange={(e) => setBallField("buckets", e.target.value)}
+                    />
+                    <span style={ui.micro}>桶</span>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, width: 90 }}
+                      inputMode="numeric"
+                      placeholder="Y顆"
+                      value={state.ball?.balls ?? ""}
+                      onChange={(e) => setBallField("balls", e.target.value)}
+                    />
+                    <span style={ui.micro}>顆</span>
+
+                    <div style={{ width: 16 }} />
+
+                    <span style={ui.micro}>金額：</span>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, width: 120 }}
+                      inputMode="numeric"
+                      placeholder="Z元"
+                      value={state.ball?.amount ?? ""}
+                      onChange={(e) => setBallField("amount", e.target.value)}
+                    />
+                    <span style={ui.micro}>元</span>
+                  </div>
+
+                  <div style={{ marginTop: 8, ...ui.micro }}>
+                    顯示：{String(state.ball?.buckets || 0)}桶{String(state.ball?.balls || 0)}顆｜
+                    {String(state.ball?.amount || 0)}元
+                  </div>
+                </>
+              ) : (
+                <div style={ui.micro}>（已收折）</div>
+              )}
+            </div>
+
+            <div style={ui.hr} />
+
+            {/* 2-3 歷史清單（可收折 + DELETE/UPDATE） */}
+            <div style={{ ...ui.card, padding: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginBottom: chargeFold.history ? 8 : 0,
+                }}
+              >
+                <div style={{ fontWeight: 900 }}>歷史清單</div>
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() =>
+                    setChargeFold((p) => ({ ...p, history: !p.history }))
+                  }
+                >
+                  {chargeFold.history ? "收折" : "展開"}
+                </button>
+              </div>
+
+              {chargeFold.history ? (
+                state.dailyHistory?.length ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {state.dailyHistory.map((h) => {
+                      const isEditing = histEditKey === h.date && !!histDraft;
+
+                      return (
+                        <div
+                          key={h.date}
+                          style={{ ...ui.card, padding: 10, boxShadow: "none" }}
+                        >
+                          {!isEditing ? (
+                            <>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  flexWrap: "wrap",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <span style={ui.badge}>{h.date}</span>
+                                <span style={ui.badge}>人數 {h.totalPeople}</span>
+
+                                <span style={ui.badge}>
+                                  季繳 {h.counts?.season ?? 0}人 / {fmtMoney(h.subtotal?.season ?? 0)}
+                                </span>
+                                <span style={ui.badge}>
+                                  臨打 {h.counts?.casual ?? 0}人 / {fmtMoney(h.subtotal?.casual ?? 0)}
+                                </span>
+                                <span style={ui.badge}>
+                                  季繳請假 {h.counts?.leave ?? 0}人 / {fmtMoney(h.subtotal?.leave ?? 0)}
+                                </span>
+
+                                <span style={ui.badge}>總計 {fmtMoney(h.subtotal?.total ?? 0)}</span>
+                                <span style={ui.badge}>已收費 {fmtMoney(h.subtotal?.collected ?? 0)}</span>
+
+                                <div style={{ flex: 1 }} />
+
+                                <button
+                                  className={`${ctl} ${ctlPad}`}
+                                  style={ui.btnSoft}
+                                  onClick={() => startEditHistory(h)}
+                                >
+                                  更新
+                                </button>
+                                <button
+                                  className={`${ctlDanger} ${ctlPad}`}
+                                  style={ui.btnDanger}
+                                  onClick={() => deleteHistory(h.date)}
+                                >
+                                  刪除
+                                </button>
+                              </div>
+
+                              <div style={{ marginTop: 6, ...ui.micro }}>
+                                用球：{String(h.ball?.buckets || 0)}桶{String(h.ball?.balls || 0)}顆｜
+                                金額 {String(h.ball?.amount || 0)} 元
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ fontWeight: 900, marginBottom: 8 }}>
+                                編輯：{histEditKey}
+                              </div>
+
+                              <div
+                                className="formRow"
+                                style={{ ...ui.formRow, marginBottom: 8 }}
+                              >
+                                <span style={ui.badge}>日期</span>
+                                <input
+                                  className={`${ctl} ${ctlPad}`}
+                                  style={{ ...ui.input, width: 140 }}
+                                  value={histDraft.date}
+                                  onChange={(e) =>
+                                    setHistDraft((p) => ({ ...p, date: e.target.value }))
+                                  }
+                                  placeholder="YYYY/MM/DD"
+                                />
+
+                                <span style={ui.badge}>總人數</span>
+                                <input
+                                  className={`${ctl} ${ctlPad}`}
+                                  style={{ ...ui.input, width: 90 }}
+                                  inputMode="numeric"
+                                  value={histDraft.totalPeople}
+                                  onChange={(e) =>
+                                    setHistDraft((p) => ({ ...p, totalPeople: e.target.value }))
+                                  }
+                                />
+
+                                <div style={{ flex: 1 }} />
+
+                                <button
+                                  className={`${ctl} ${ctlPad}`}
+                                  style={ui.btnSoft}
+                                  onClick={saveEditHistory}
+                                >
+                                  儲存
+                                </button>
+                                <button
+                                  className={`${ctl} ${ctlPad}`}
+                                  style={ui.btnSoft}
+                                  onClick={cancelEditHistory}
+                                >
+                                  取消
+                                </button>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 8 }}>
+                                <div className="formRow" style={ui.formRow}>
+                                  <span style={ui.badge}>季繳 人數</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 90 }}
+                                    inputMode="numeric"
+                                    value={histDraft.seasonCount}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, seasonCount: e.target.value }))
+                                    }
+                                  />
+                                  <span style={ui.badge}>季繳 金額</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 120 }}
+                                    inputMode="numeric"
+                                    value={histDraft.seasonAmt}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, seasonAmt: e.target.value }))
+                                    }
+                                  />
+
+                                  <span style={ui.badge}>臨打 人數</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 90 }}
+                                    inputMode="numeric"
+                                    value={histDraft.casualCount}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, casualCount: e.target.value }))
+                                    }
+                                  />
+                                  <span style={ui.badge}>臨打 金額</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 120 }}
+                                    inputMode="numeric"
+                                    value={histDraft.casualAmt}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, casualAmt: e.target.value }))
+                                    }
+                                  />
+                                </div>
+
+                                <div className="formRow" style={ui.formRow}>
+                                  <span style={ui.badge}>季繳請假 人數</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 90 }}
+                                    inputMode="numeric"
+                                    value={histDraft.leaveCount}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, leaveCount: e.target.value }))
+                                    }
+                                  />
+                                  <span style={ui.badge}>季繳請假 金額</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 120 }}
+                                    inputMode="numeric"
+                                    value={histDraft.leaveAmt}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, leaveAmt: e.target.value }))
+                                    }
+                                  />
+
+                                  <span style={ui.badge}>總計</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 120 }}
+                                    inputMode="numeric"
+                                    value={histDraft.totalAmt}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, totalAmt: e.target.value }))
+                                    }
+                                  />
+
+                                  <span style={ui.badge}>已收費合計</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 120 }}
+                                    inputMode="numeric"
+                                    value={histDraft.collectedAmt}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, collectedAmt: e.target.value }))
+                                    }
+                                  />
+                                </div>
+
+                                <div className="formRow" style={ui.formRow}>
+                                  <span style={ui.badge}>用球</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 90 }}
+                                    inputMode="numeric"
+                                    placeholder="桶"
+                                    value={histDraft.buckets}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, buckets: e.target.value }))
+                                    }
+                                  />
+                                  <span style={ui.micro}>桶</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 90 }}
+                                    inputMode="numeric"
+                                    placeholder="顆"
+                                    value={histDraft.balls}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, balls: e.target.value }))
+                                    }
+                                  />
+                                  <span style={ui.micro}>顆</span>
+
+                                  <span style={ui.badge}>用球金額</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 120 }}
+                                    inputMode="numeric"
+                                    placeholder="元"
+                                    value={histDraft.ballAmt}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, ballAmt: e.target.value }))
+                                    }
+                                  />
+                                </div>
+
+                                <div style={ui.micro}>
+                                  顯示預覽：季繳 {parseIntSafe(histDraft.seasonCount)}人 / {fmtMoney(parseMoney(histDraft.seasonAmt))}｜
+                                  臨打 {parseIntSafe(histDraft.casualCount)}人 / {fmtMoney(parseMoney(histDraft.casualAmt))}｜
+                                  季繳請假 {parseIntSafe(histDraft.leaveCount)}人 / {fmtMoney(parseMoney(histDraft.leaveAmt))}｜
+                                  總計 {fmtMoney(parseMoney(histDraft.totalAmt))}｜
+                                  已收費 {fmtMoney(parseMoney(histDraft.collectedAmt))}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={ui.micro}>（目前沒有歷史紀錄）</div>
+                )
+              ) : (
+                <div style={ui.micro}>（已收折）</div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ✅ 置中小 Toast：已選擇（不影響版面） */}
+      {selectedPlayer ? (
+        <div className="selectedToast">
+          <div className="selectedToastInner">
+            <div className="toastGoose" style={{ ...ui.card, padding: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontWeight: 900, minWidth: 120 }}>
+                  已選擇：{selectedPlayer.name}
+                </div>
+
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() => setSelectedId("")}
+                >
+                  取消
+                </button>
+
+                <button
+                  className={`${ctl} ${ctlPad}`}
+                  style={ui.btnSoft}
+                  onClick={() => placeSelected({ type: "bench" })}
+                >
+                  放回
+                </button>
+              </div>
+
+              <div style={{ ...ui.micro, marginTop: 6, textAlign: "center" }}>
+                點目的地格子放置；點到有人會交換並跳確認
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="topBar" style={ui.topBar}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <h2 style={{ margin: "0 0 6px 0", fontWeight: 900 }}>早安羽球排點系統</h2>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <h2 style={ui.h2}>早安羽球排點系統</h2>
             <span style={ui.badge}>總人數 {totalPeople}</span>
 
             <span
@@ -1657,13 +2594,15 @@ export default function App() {
             </span>
           </div>
 
-          <div style={{ fontSize: 12, color: "#64748B", lineHeight: 1.3 }}>
+          <div style={ui.hint}>
             上 4 = 上場｜下 4 = 排隊｜右側 = 休息｜拖曳或
             <span style={{ color: "#EF4444", fontWeight: 900 }}>點選</span>人 →
-            點格子放置
+            點格子放置（建議用點選）｜
+            固定格互換會先確認｜下場自動補位＋推進｜各區塊自動依性別/姓名排序
           </div>
         </div>
 
+        {/* ===== Controls ===== */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button
             className={`${ctl} ${ctlPad}`}
@@ -1674,6 +2613,7 @@ export default function App() {
             }}
             disabled={!canUndo}
             onClick={undo}
+            title="上一步（Undo）"
           >
             上一步
           </button>
@@ -1687,6 +2627,7 @@ export default function App() {
             }}
             disabled={!canRedo}
             onClick={redo}
+            title="下一步（Redo）"
           >
             下一步
           </button>
@@ -1695,6 +2636,7 @@ export default function App() {
             className={`${ctl} ${ctlPad}`}
             style={ui.btnSoft}
             onClick={toggleFullscreen}
+            title="全螢幕"
           >
             {isFullscreen ? "離開全螢幕" : "全螢幕"}
           </button>
@@ -1703,6 +2645,7 @@ export default function App() {
             className={`${ctl} ${ctlPad}`}
             style={ui.btnSoft}
             onClick={openRosterModal}
+            title="名單匯入/匯出"
           >
             名單
           </button>
@@ -1711,6 +2654,7 @@ export default function App() {
             className={`${ctl} ${ctlPad}`}
             style={ui.btnSoft}
             onClick={openChargeModal}
+            title="收費清單 / 用球紀錄 / 歷史"
           >
             收費
           </button>
@@ -1718,7 +2662,7 @@ export default function App() {
       </div>
 
       <div className="layout">
-        {/* Left（上場/排隊） */}
+        {/* Left */}
         <div>
           <div style={ui.sectionTitle}>
             <span>上場區（4 面）</span>
@@ -1740,7 +2684,7 @@ export default function App() {
                   : 0;
 
                 return (
-                  <div key={ci} style={ui.card}>
+                  <div key={ci} className="cardBox" style={ui.card}>
                     <div
                       style={{
                         display: "flex",
@@ -1763,9 +2707,18 @@ export default function App() {
                         }}
                       />
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
                         <div style={ui.micro}>
-                          {court.startTs ? `上場時間 ${formatHMS(elapsed)}` : "未開始"}
+                          {court.startTs
+                            ? `上場時間 ${formatHMS(elapsed)}`
+                            : "未開始"}
                         </div>
                         <button
                           className={`${ctlDanger} ${ctlPad}`}
@@ -1778,13 +2731,23 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div style={{ display: "grid", gap: 8 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr",
+                        gap: 8,
+                      }}
+                    >
                       {court.slots.map((pid, si) => {
                         const p = pid ? state.players[pid] : null;
-                        const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
+                        const bg = p
+                          ? genderBg(p.gender)
+                          : "rgba(248,250,252,.9)";
+
                         return (
                           <div
                             key={si}
+                            className="slotBox"
                             style={{
                               ...ui.slot,
                               background: bg,
@@ -1812,7 +2775,9 @@ export default function App() {
                                   flexWrap: "nowrap",
                                 }}
                               >
-                                <span style={ui.nameStyle}>{shortName(p.name, 7)}</span>
+                                <span style={ui.nameStyle}>
+                                  {shortName(p.name, 7)}
+                                </span>
                                 <span style={ui.pill}>{p.games}</span>
                               </div>
                             ) : (
@@ -1842,12 +2807,14 @@ export default function App() {
           {state.ui.showQueues ? (
             <div className="grid4">
               {state.queues.map((group, gi) => (
-                <div key={gi} style={ui.card}>
+                <div key={gi} className="cardBox" style={ui.card}>
                   <div
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
                       marginBottom: 8,
                     }}
                   >
@@ -1855,13 +2822,23 @@ export default function App() {
                     <div style={ui.micro}>{group.filter(Boolean).length}/4</div>
                   </div>
 
-                  <div style={{ display: "grid", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr",
+                      gap: 8,
+                    }}
+                  >
                     {group.map((pid, si) => {
                       const p = pid ? state.players[pid] : null;
-                      const bg = p ? genderBg(p.gender) : "rgba(248,250,252,.9)";
+                      const bg = p
+                        ? genderBg(p.gender)
+                        : "rgba(248,250,252,.9)";
+
                       return (
                         <div
                           key={si}
+                          className="slotBox"
                           style={{
                             ...ui.slot,
                             background: bg,
@@ -1869,7 +2846,9 @@ export default function App() {
                           }}
                           onDragOver={allowDrop}
                           onDrop={(e) => dropTo(e, { type: "queue", gi, si })}
-                          onClick={() => onSlotClick({ type: "queue", gi, si }, pid)}
+                          onClick={() =>
+                            onSlotClick({ type: "queue", gi, si }, pid)
+                          }
                         >
                           {p ? (
                             <div
@@ -1887,7 +2866,9 @@ export default function App() {
                                 flexWrap: "nowrap",
                               }}
                             >
-                              <span style={ui.nameStyle}>{shortName(p.name, 7)}</span>
+                              <span style={ui.nameStyle}>
+                                {shortName(p.name, 7)}
+                              </span>
                               <span style={ui.pill}>{p.games}</span>
                             </div>
                           ) : (
@@ -1903,7 +2884,7 @@ export default function App() {
           ) : null}
         </div>
 
-        {/* Right（休息區） */}
+        {/* Right */}
         <div className="benchSticky">
           <div style={ui.sectionTitle}>
             <span>休息區</span>
@@ -1929,14 +2910,15 @@ export default function App() {
           </div>
 
           <div
+            className="benchBox"
             style={ui.benchCard}
             onDragOver={allowDrop}
             onDrop={(e) => dropTo(e, { type: "bench" })}
           >
             {state.ui.showBench ? (
               <>
-                {/* ✅ 新增區（含分類 + 季繳請假替補） */}
                 <div
+                  className="cardBox"
                   style={{
                     ...ui.card,
                     padding: 10,
@@ -1944,7 +2926,7 @@ export default function App() {
                     marginBottom: 10,
                   }}
                 >
-                  <div style={ui.formRow} className="formRow">
+                  <div className="formRow" style={ui.formRow}>
                     <input
                       className={`${ctl} ${ctlPad}`}
                       style={{ ...ui.input, minWidth: 160, flex: 1 }}
@@ -1952,7 +2934,6 @@ export default function App() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                     />
-
                     <select
                       className={`${ctl} ${ctlPad}`}
                       style={ui.select}
@@ -1962,25 +2943,6 @@ export default function App() {
                       <option value="男">男</option>
                       <option value="女">女</option>
                     </select>
-
-                    <select
-                      className={`${ctl} ${ctlPad}`}
-                      style={ui.select}
-                      value={addCategory}
-                      onChange={(e) => {
-                        const v = normalizeCategoryText(e.target.value);
-                        setAddCategory(v);
-                        if (v !== "季繳請假") {
-                          setSubName("");
-                          setSubGender("男");
-                        }
-                      }}
-                    >
-                      <option value="季繳">季繳</option>
-                      <option value="臨打">臨打</option>
-                      <option value="季繳請假">季繳請假</option>
-                    </select>
-
                     <button
                       className={`${ctl} ${ctlPad}`}
                       style={ui.btn}
@@ -1989,43 +2951,17 @@ export default function App() {
                       新增
                     </button>
                   </div>
-
-                  {normalizeCategoryText(addCategory) === "季繳請假" ? (
-                    <div style={{ ...ui.formRow, marginTop: 10 }}>
-                      <input
-                        className={`${ctl} ${ctlPad}`}
-                        style={{ ...ui.input, minWidth: 180, flex: 1 }}
-                        placeholder="季繳請假替補名字"
-                        value={subName}
-                        onChange={(e) => setSubName(e.target.value)}
-                      />
-                      <select
-                        className={`${ctl} ${ctlPad}`}
-                        style={ui.select}
-                        value={subGender}
-                        onChange={(e) => setSubGender(e.target.value)}
-                      >
-                        <option value="男">替補性別：男</option>
-                        <option value="女">替補性別：女</option>
-                      </select>
-
-                      <div style={{ ...ui.micro, flexBasis: "100%" }}>
-                        提示：分類為「季繳請假」時，休息區/上場/排隊會顯示「替補名字/性別」；收費表仍保留原本請假的名字/性別與替補欄位。
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: 8, ...ui.micro }}>
-                      新增隊員會依你選的「分類」建立；若要替補請選「季繳請假」並填替補資料。
-                    </div>
-                  )}
+                  <div style={{ marginTop: 8, ...ui.micro }}>
+                    新增隊員預設分類＝臨打（需要分類/請假替補請用「名單匯入/匯出」）
+                  </div>
                 </div>
 
-                {/* 名單區 */}
                 <div className="benchScrollArea">
                   <div className="benchList2" style={ui.list2}>
                     {benchPlayers.map((p) => (
                       <div
                         key={p.id}
+                        className="benchItemBox"
                         draggable
                         onDragStart={(e) => dragStart(e, p.id)}
                         onClick={() => pickPlayer(p.id)}
@@ -2044,7 +2980,9 @@ export default function App() {
                             flexWrap: "nowrap",
                           }}
                         >
-                          <span style={ui.nameStyle}>{shortName(p.name, 7)}</span>
+                          <span style={ui.nameStyle}>
+                            {shortName(p.name, 7)}
+                          </span>
                           <span style={ui.pill}>{p.games}</span>
                         </div>
 
