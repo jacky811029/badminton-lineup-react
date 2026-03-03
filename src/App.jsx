@@ -185,6 +185,9 @@ function fmtMoney(n) {
   const safe = Number.isFinite(v) ? v : 0;
   return new Intl.NumberFormat("zh-TW").format(safe);
 }
+function fmtMoneyYuan(n) {
+  return `${fmtMoney(n)}元`;
+}
 
 /** ===== 依性別→名稱排序（女先男後，空位最後） ===== */
 function genderOrder(g) {
@@ -709,6 +712,9 @@ export default function App() {
   // ===== 基本 UI state =====
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
+  const [newCategory, setNewCategory] = useState("臨打");
+  const [subName, setSubName] = useState("");
+  const [subGender, setSubGender] = useState("男");
   const [selectedId, setSelectedId] = useState("");
   const [tick, setTick] = useState(nowSec());
 
@@ -852,6 +858,10 @@ export default function App() {
     const n = name.trim();
     if (!n) return;
 
+    const cat = normalizeCategoryText(newCategory);
+    const sn = String(subName || "").trim();
+    const sg = normalizeGenderText(subGender);
+
     const exists = Object.values(state.players).some((p) => p.name === n);
     if (exists) {
       alert("已有同名隊員，請改名或加註。");
@@ -863,11 +873,11 @@ export default function App() {
       id,
       name: n,
       gender,
-      category: "臨打",
+      category: cat,
       origName: n,
       origGender: gender,
-      subName: "",
-      subGender: "",
+      subName: cat === "季繳請假" ? sn : "",
+      subGender: cat === "季繳請假" && sn ? sg : "",
       games: 0,
       totalSeconds: 0,
     };
@@ -875,12 +885,18 @@ export default function App() {
     applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.players[id] = p;
-      next.payments[id] = false; // 臨打預設未收費
+      // payments: true means "already collected".
+      // Season members are treated as already paid by default.
+      next.payments[id] = cat === "季繳";
       benchPushFront(next, id);
       return next;
     });
 
     setName("");
+    // Keep gender; reset category/sub fields for next quick add.
+    setNewCategory("臨打");
+    setSubName("");
+    setSubGender("男");
   }
 
   function removePlayer(id) {
@@ -2155,8 +2171,8 @@ export default function App() {
                       季繳請假 {chargeStats.counts.leave}人 / {fmtMoney(chargeStats.subtotal.leave)}
                     </div>
                     <div style={ui.micro}>
-                      總計（全部）{fmtMoney(chargeStats.subtotal.total)}｜
-                      已收費合計（勾選者）{fmtMoney(chargeStats.subtotal.collected)}
+                      總計（全部）{fmtMoneyYuan(chargeStats.subtotal.total)}｜
+                      已收費合計（勾選者）{fmtMoneyYuan(chargeStats.subtotal.collected)}
                     </div>
                   </div>
                 </>
@@ -2296,8 +2312,8 @@ export default function App() {
                                   季繳請假 {h.counts?.leave ?? 0}人 / {fmtMoney(h.subtotal?.leave ?? 0)}
                                 </span>
 
-                                <span style={ui.badge}>總計 {fmtMoney(h.subtotal?.total ?? 0)}</span>
-                                <span style={ui.badge}>已收費 {fmtMoney(h.subtotal?.collected ?? 0)}</span>
+                                <span style={ui.badge}>總計 {fmtMoneyYuan(h.subtotal?.total ?? 0)}</span>
+                                <span style={ui.badge}>已收費 {fmtMoneyYuan(h.subtotal?.collected ?? 0)}</span>
 
                                 <div style={{ flex: 1 }} />
 
@@ -2662,7 +2678,7 @@ export default function App() {
             onClick={openChargeModal}
             title="收費清單 / 用球紀錄 / 歷史"
           >
-            收費
+            管理
           </button>
         </div>
       </div>
@@ -2949,6 +2965,38 @@ export default function App() {
                       <option value="男">男</option>
                       <option value="女">女</option>
                     </select>
+                    <select
+                      className={`${ctl} ${ctlPad}`}
+                      style={ui.select}
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      title="分類"
+                    >
+                      <option value="季繳">季繳</option>
+                      <option value="臨打">臨打</option>
+                      <option value="季繳請假">季繳請假</option>
+                    </select>
+                    {normalizeCategoryText(newCategory) === "季繳請假" ? (
+                      <>
+                        <input
+                          className={`${ctl} ${ctlPad}`}
+                          style={{ ...ui.input, minWidth: 120, flex: 1 }}
+                          placeholder="替補姓名"
+                          value={subName}
+                          onChange={(e) => setSubName(e.target.value)}
+                        />
+                        <select
+                          className={`${ctl} ${ctlPad}`}
+                          style={ui.select}
+                          value={subGender}
+                          onChange={(e) => setSubGender(e.target.value)}
+                          title="替補性別"
+                        >
+                          <option value="男">男</option>
+                          <option value="女">女</option>
+                        </select>
+                      </>
+                    ) : null}
                     <button
                       className={`${ctl} ${ctlPad}`}
                       style={ui.btn}
@@ -2958,7 +3006,7 @@ export default function App() {
                     </button>
                   </div>
                   <div style={{ marginTop: 8, ...ui.micro }}>
-                    新增隊員預設分類＝臨打（需要分類/請假替補請用「名單匯入/匯出」）
+                    休息區新增名單可設定分類；季繳請假可填替補姓名/性別。
                   </div>
                 </div>
 
