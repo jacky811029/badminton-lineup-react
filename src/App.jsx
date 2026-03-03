@@ -739,7 +739,7 @@ export default function App() {
   const feePressTimerRef = useRef(null);
 
   const ADMIN_HASH =
-    "f16fac8d88fb50f484b1559cb5f087e5501c4f9c1ccc9f71e123547b18e7b536";
+    "94edf28c6d6da38fd35d7ad53e485307f89fbeaf120485c8d17a43f323deee71"; // 666666
 
   function resetAllHard() {
     dispatch({ type: "RESET_HARD" });
@@ -801,14 +801,8 @@ export default function App() {
 
   function openRosterModal() {
     setRosterOpen(true);
+    // 打開時先把目前名單放進文字框，但不要預設全選。
     setRosterText(rosterToText(state.players));
-    setTimeout(selectRosterText, 0);
-  }
-  function doExportRoster() {
-    // Refresh textarea from current players.
-    setRosterText(rosterToText(state.players));
-    // Select after React updates DOM.
-    setTimeout(selectRosterText, 0);
   }
   function doImportRoster() {
     const rows = parseRosterText(rosterText);
@@ -1420,6 +1414,18 @@ export default function App() {
     applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.ball[key] = String(v);
+      return next;
+    });
+  }
+
+  function clearBallFields() {
+    const ok = confirm("確定要清空用球欄位嗎？");
+    if (!ok) return;
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      next.ball.buckets = "";
+      next.ball.balls = "";
+      next.ball.amount = "";
       return next;
     });
   }
@@ -2041,14 +2047,6 @@ export default function App() {
               <button
                 className={`${ctl} ${ctlPad}`}
                 style={ui.btnSoft}
-                onClick={doExportRoster}
-                title="把目前系統名單同步到文字框"
-              >
-                更新文字框
-              </button>
-              <button
-                className={`${ctl} ${ctlPad}`}
-                style={ui.btnSoft}
                 onClick={selectRosterText}
                 title="全選文字框內容"
               >
@@ -2105,6 +2103,15 @@ export default function App() {
 
             {/* ✅ 共用日期（點擊可修改、同步） */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              <span
+                style={{ ...ui.badge, cursor: "pointer" }}
+                title="點一下修改日期（會同步人員收費/用球紀錄）"
+                onClick={promptChangeDate}
+              >
+                日期 {chargeDate}（點一下修改）
+              </span>
+              <span style={ui.badge}>總人數 {chargeRows.length}</span>
+
               <button
                 className={`${ctl} ${ctlPad}`}
                 style={ui.btnSoft}
@@ -2117,14 +2124,6 @@ export default function App() {
                 名單匯入/匯出
               </button>
 
-              <span
-                style={{ ...ui.badge, cursor: "pointer" }}
-                title="點一下修改日期（會同步人員收費/用球紀錄）"
-                onClick={promptChangeDate}
-              >
-                日期 {chargeDate}（點一下修改）
-              </span>
-              <span style={ui.badge}>總人數 {chargeRows.length}</span>
               <div style={{ flex: 1 }} />
               <button
                 className={`${ctl} ${ctlPad}`}
@@ -2156,7 +2155,7 @@ export default function App() {
                     setChargeFold((p) => ({ ...p, people: !p.people }))
                   }
                 >
-                  {chargeFold.people ? "收折" : "展開"}
+                  {chargeFold.people ? "▾" : "▸"}
                 </button>
               </div>
 
@@ -2257,8 +2256,8 @@ export default function App() {
                       季繳請假{chargeStats.counts.leave}人{fmtMoneyYuan(chargeStats.subtotal.leave)}
                     </div>
                     <div style={ui.micro}>
-                      總計（全部）{fmtMoneyYuan(chargeStats.subtotal.total)}｜
-                      已收費合計（勾選者）{fmtMoneyYuan(chargeStats.subtotal.collected)}
+                      總計（全部）：{fmtMoneyYuan(chargeStats.subtotal.total)}｜
+                      已收費合計（勾選者）：{fmtMoneyYuan(chargeStats.subtotal.collected)}
                     </div>
                   </div>
                 </>
@@ -2287,7 +2286,7 @@ export default function App() {
                   style={ui.btnSoft}
                   onClick={() => setChargeFold((p) => ({ ...p, ball: !p.ball }))}
                 >
-                  {chargeFold.ball ? "收折" : "展開"}
+                  {chargeFold.ball ? "▾" : "▸"}
                 </button>
               </div>
 
@@ -2328,9 +2327,20 @@ export default function App() {
                     <span style={ui.micro}>元</span>
                   </div>
 
-                  <div style={{ marginTop: 8, ...ui.micro }}>
-                    顯示：{String(state.ball?.buckets || 0)}桶{String(state.ball?.balls || 0)}顆｜
-                    {String(state.ball?.amount || 0)}元
+                  <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={ui.micro}>
+                      顯示：{String(state.ball?.buckets || 0)}桶{String(state.ball?.balls || 0)}顆｜
+                      {fmtMoneyYuan(parseMoney(state.ball?.amount || 0))}
+                    </div>
+                    <div style={{ flex: 1 }} />
+                    <button
+                      className={`${ctl} ${ctlPad}`}
+                      style={ui.btnSoft}
+                      onClick={clearBallFields}
+                      title="清空用球欄位"
+                    >
+                      清空
+                    </button>
                   </div>
                 </>
               ) : (
@@ -2360,7 +2370,7 @@ export default function App() {
                     setChargeFold((p) => ({ ...p, history: !p.history }))
                   }
                 >
-                  {chargeFold.history ? "收折" : "展開"}
+                  {chargeFold.history ? "▾" : "▸"}
                 </button>
               </div>
 
@@ -2389,13 +2399,13 @@ export default function App() {
                                 <span style={ui.badge}>人數 {h.totalPeople}</span>
 
                                 <span style={ui.badge}>
-                                  季繳 {h.counts?.season ?? 0}人 / {fmtMoney(h.subtotal?.season ?? 0)}
+                                  季繳{h.counts?.season ?? 0}人{fmtMoneyYuan(h.subtotal?.season ?? 0)}
                                 </span>
                                 <span style={ui.badge}>
-                                  臨打 {h.counts?.casual ?? 0}人 / {fmtMoney(h.subtotal?.casual ?? 0)}
+                                  臨打{h.counts?.casual ?? 0}人{fmtMoneyYuan(h.subtotal?.casual ?? 0)}
                                 </span>
                                 <span style={ui.badge}>
-                                  季繳請假 {h.counts?.leave ?? 0}人 / {fmtMoney(h.subtotal?.leave ?? 0)}
+                                  季繳請假{h.counts?.leave ?? 0}人{fmtMoneyYuan(h.subtotal?.leave ?? 0)}
                                 </span>
 
                                 <span style={ui.badge}>總計 {fmtMoneyYuan(h.subtotal?.total ?? 0)}</span>
@@ -2421,7 +2431,7 @@ export default function App() {
 
                               <div style={{ marginTop: 6, ...ui.micro }}>
                                 用球：{String(h.ball?.buckets || 0)}桶{String(h.ball?.balls || 0)}顆｜
-                                金額 {String(h.ball?.amount || 0)} 元
+                                金額 {fmtMoneyYuan(parseMoney(h.ball?.amount || 0))}
                               </div>
                             </>
                           ) : (
@@ -2771,8 +2781,9 @@ export default function App() {
               className={`${ctl} ${ctlPad}`}
               style={ui.btnSoft}
               onClick={() => toggleSection("courts")}
+              title={state.ui.showCourts ? "收折" : "展開"}
             >
-              {state.ui.showCourts ? "收折" : "展開"}
+              {state.ui.showCourts ? "▾" : "▸"}
             </button>
           </div>
 
@@ -2901,8 +2912,9 @@ export default function App() {
               className={`${ctl} ${ctlPad}`}
               style={ui.btnSoft}
               onClick={() => toggleSection("queues")}
+              title={state.ui.showQueues ? "收折" : "展開"}
             >
-              {state.ui.showQueues ? "收折" : "展開"}
+              {state.ui.showQueues ? "▾" : "▸"}
             </button>
           </div>
 
@@ -3006,8 +3018,9 @@ export default function App() {
                 className={`${ctl} ${ctlPad}`}
                 style={ui.btnSoft}
                 onClick={() => toggleSection("bench")}
+                title={state.ui.showBench ? "收折" : "展開"}
               >
-                {state.ui.showBench ? "收折" : "展開"}
+                {state.ui.showBench ? "▾" : "▸"}
               </button>
             </div>
           </div>
