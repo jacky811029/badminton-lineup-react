@@ -746,13 +746,53 @@ export default function App() {
   // ===== 名單匯入/匯出 modal =====
   const [rosterOpen, setRosterOpen] = useState(false);
   const [rosterText, setRosterText] = useState("");
+  const rosterTextRef = useRef(null);
+
+  function selectRosterText() {
+    const el = rosterTextRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }
+
+  async function copyRosterText() {
+    const el = rosterTextRef.current;
+    const text = el ? String(el.value || "") : String(rosterText || "");
+    if (!text.trim()) {
+      alert("目前文字框是空的。");
+      return;
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for older browsers.
+        selectRosterText();
+        document.execCommand("copy");
+      }
+      alert("已複製到剪貼簿。");
+    } catch (e) {
+      // Clipboard API might be blocked on insecure contexts.
+      try {
+        selectRosterText();
+        document.execCommand("copy");
+        alert("已複製到剪貼簿。");
+      } catch (_e2) {
+        alert(`複製失敗：${String(e)}`);
+      }
+    }
+  }
 
   function openRosterModal() {
     setRosterOpen(true);
     setRosterText(rosterToText(state.players));
+    setTimeout(selectRosterText, 0);
   }
   function doExportRoster() {
+    // Refresh textarea from current players.
     setRosterText(rosterToText(state.players));
+    // Select after React updates DOM.
+    setTimeout(selectRosterText, 0);
   }
   function doImportRoster() {
     const rows = parseRosterText(rosterText);
@@ -1963,6 +2003,7 @@ export default function App() {
             </div>
 
             <textarea
+              ref={rosterTextRef}
               className={`${ctl}`}
               style={ui.textarea}
               value={rosterText}
@@ -1985,8 +2026,25 @@ export default function App() {
                 className={`${ctl} ${ctlPad}`}
                 style={ui.btnSoft}
                 onClick={doExportRoster}
+                title="把目前系統名單同步到文字框"
               >
-                匯出（更新文字框）
+                更新文字框
+              </button>
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={selectRosterText}
+                title="全選文字框內容"
+              >
+                全選
+              </button>
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btn}
+                onClick={copyRosterText}
+                title="複製文字框內容到剪貼簿"
+              >
+                複製
               </button>
               <button
                 className={`${ctlDanger} ${ctlPad}`}
@@ -3012,33 +3070,44 @@ export default function App() {
 
                 <div className="benchScrollArea">
                   <div className="benchList2" style={ui.list2}>
-                    {benchPlayers.map((p) => (
-                      <div
-                        key={p.id}
-                        className="benchItemBox"
-                        draggable
-                        onDragStart={(e) => dragStart(e, p.id)}
-                        onClick={() => pickPlayer(p.id)}
-                        style={{
-                          ...ui.benchItem,
-                          background: genderBg(p.gender),
-                          ...(p.id && p.id === selectedId ? selectedRing : null),
-                        }}
-                      >
+                    {benchPlayers.map((p) => {
+                      const isLeave = normalizeCategoryText(p.category) === "季繳請假";
+                      const displayName =
+                        isLeave && String(p.subName || "").trim()
+                          ? String(p.subName || "").trim()
+                          : p.name;
+                      const displayGender =
+                        isLeave && String(p.subName || "").trim()
+                          ? normalizeGenderText(p.subGender)
+                          : p.gender;
+
+                      return (
                         <div
+                          key={p.id}
+                          className="benchItemBox"
+                          draggable
+                          onDragStart={(e) => dragStart(e, p.id)}
+                          onClick={() => pickPlayer(p.id)}
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            minWidth: 0,
-                            flexWrap: "nowrap",
+                            ...ui.benchItem,
+                            background: genderBg(displayGender),
+                            ...(p.id && p.id === selectedId ? selectedRing : null),
                           }}
                         >
-                          <span style={ui.nameStyle}>
-                            {shortName(p.name, 7)}
-                          </span>
-                          <span style={ui.pill}>{p.games}</span>
-                        </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              minWidth: 0,
+                              flexWrap: "nowrap",
+                            }}
+                          >
+                            <span style={ui.nameStyle}>
+                              {shortName(displayName, 7)}
+                            </span>
+                            <span style={ui.pill}>{p.games}</span>
+                          </div>
 
                         {state.ui.showDelete ? (
                           <button
@@ -3053,7 +3122,8 @@ export default function App() {
                           </button>
                         ) : null}
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
 
                   <div style={{ marginTop: 10, ...ui.micro }}>
