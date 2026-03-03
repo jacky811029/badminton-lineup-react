@@ -301,6 +301,22 @@ function normalizeGenderText(g) {
   if (low === "m" || low === "male") return "男";
   return "男";
 }
+function getDisplayForBench(p) {
+  // For "季繳請假", show substitute as the primary identity in bench.
+  const isLeave = normalizeCategoryText(p?.category) === "季繳請假";
+  const sub = String(p?.subName || "").trim();
+  if (isLeave && sub) {
+    return {
+      name: sub,
+      gender: normalizeGenderText(p?.subGender),
+    };
+  }
+  return {
+    name: p?.name || "",
+    gender: normalizeGenderText(p?.gender),
+  };
+}
+
 function parseRosterText(text) {
   const lines = String(text || "")
     .replace(/\r\n/g, "\n")
@@ -2089,6 +2105,18 @@ export default function App() {
 
             {/* ✅ 共用日期（點擊可修改、同步） */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={() => {
+                  setChargeOpen(false);
+                  openRosterModal();
+                }}
+                title="名單匯入/匯出"
+              >
+                名單
+              </button>
+
               <span
                 style={{ ...ui.badge, cursor: "pointer" }}
                 title="點一下修改日期（會同步人員收費/用球紀錄）"
@@ -2224,9 +2252,9 @@ export default function App() {
                   <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
                     <div style={ui.micro}>
                       小計（依分類）：
-                      季繳 {chargeStats.counts.season}人 / {fmtMoney(chargeStats.subtotal.season)}｜
-                      臨打 {chargeStats.counts.casual}人 / {fmtMoney(chargeStats.subtotal.casual)}｜
-                      季繳請假 {chargeStats.counts.leave}人 / {fmtMoney(chargeStats.subtotal.leave)}
+                      季繳{chargeStats.counts.season}人{fmtMoneyYuan(chargeStats.subtotal.season)}｜
+                      臨打{chargeStats.counts.casual}人{fmtMoneyYuan(chargeStats.subtotal.casual)}｜
+                      季繳請假{chargeStats.counts.leave}人{fmtMoneyYuan(chargeStats.subtotal.leave)}
                     </div>
                     <div style={ui.micro}>
                       總計（全部）{fmtMoneyYuan(chargeStats.subtotal.total)}｜
@@ -2575,11 +2603,11 @@ export default function App() {
                                 </div>
 
                                 <div style={ui.micro}>
-                                  顯示預覽：季繳 {parseIntSafe(histDraft.seasonCount)}人 / {fmtMoney(parseMoney(histDraft.seasonAmt))}｜
-                                  臨打 {parseIntSafe(histDraft.casualCount)}人 / {fmtMoney(parseMoney(histDraft.casualAmt))}｜
-                                  季繳請假 {parseIntSafe(histDraft.leaveCount)}人 / {fmtMoney(parseMoney(histDraft.leaveAmt))}｜
-                                  總計 {fmtMoney(parseMoney(histDraft.totalAmt))}｜
-                                  已收費 {fmtMoney(parseMoney(histDraft.collectedAmt))}
+                                  顯示預覽：季繳{parseIntSafe(histDraft.seasonCount)}人{fmtMoneyYuan(parseMoney(histDraft.seasonAmt))}｜
+                                  臨打{parseIntSafe(histDraft.casualCount)}人{fmtMoneyYuan(parseMoney(histDraft.casualAmt))}｜
+                                  季繳請假{parseIntSafe(histDraft.leaveCount)}人{fmtMoneyYuan(parseMoney(histDraft.leaveAmt))}｜
+                                  總計{fmtMoneyYuan(parseMoney(histDraft.totalAmt))}｜
+                                  已收費{fmtMoneyYuan(parseMoney(histDraft.collectedAmt))}
                                 </div>
                               </div>
                             </>
@@ -2615,7 +2643,7 @@ export default function App() {
                 }}
               >
                 <div style={{ fontWeight: 900, minWidth: 120 }}>
-                  已選擇：{selectedPlayer.name}
+                  已選擇：{getDisplayForBench(selectedPlayer).name}
                 </div>
 
                 <button
@@ -2721,14 +2749,7 @@ export default function App() {
             {isFullscreen ? "離開全螢幕" : "全螢幕"}
           </button>
 
-          <button
-            className={`${ctl} ${ctlPad}`}
-            style={ui.btnSoft}
-            onClick={openRosterModal}
-            title="名單匯入/匯出"
-          >
-            名單
-          </button>
+          {/* 名單入口已移至「管理」介面 */}
 
           <button
             className={`${ctl} ${ctlPad}`}
@@ -3071,15 +3092,9 @@ export default function App() {
                 <div className="benchScrollArea">
                   <div className="benchList2" style={ui.list2}>
                     {benchPlayers.map((p) => {
-                      const isLeave = normalizeCategoryText(p.category) === "季繳請假";
-                      const displayName =
-                        isLeave && String(p.subName || "").trim()
-                          ? String(p.subName || "").trim()
-                          : p.name;
-                      const displayGender =
-                        isLeave && String(p.subName || "").trim()
-                          ? normalizeGenderText(p.subGender)
-                          : p.gender;
+                      const disp = getDisplayForBench(p);
+                      const displayName = disp.name;
+                      const displayGender = disp.gender;
 
                       return (
                         <div
