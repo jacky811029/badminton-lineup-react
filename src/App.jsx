@@ -1228,15 +1228,21 @@ export default function App() {
 
   // ===== 收費表資料 =====
   function parseMoney(v) {
-    const s = String(v ?? "").trim();
+    // Accept user inputs like "1,000", "1000元", "$1000".
+    const s0 = String(v ?? "").trim();
+    if (!s0) return 0;
+    const s = s0.replace(/[,，\s元$]/g, "");
     if (!s) return 0;
     const n = Number(s);
     return Number.isFinite(n) ? n : 0;
   }
   function parseIntSafe(v) {
-    const s = String(v ?? "").trim();
+    // Accept inputs like "20", "20人", "1,234".
+    const s0 = String(v ?? "").trim();
+    if (!s0) return 0;
+    const s = s0.replace(/[^0-9]/g, "");
     if (!s) return 0;
-    const n = Number(s);
+    const n = parseInt(s, 10);
     if (!Number.isFinite(n)) return 0;
     return Math.max(0, Math.floor(n));
   }
