@@ -737,6 +737,29 @@ export default function App() {
   }
 
   // ===== 基本 UI state =====
+  const leftColRef = useRef(null);
+  const benchStickyRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const leftEl = leftColRef.current;
+    const rightEl = benchStickyRef.current;
+    if (!leftEl || !rightEl) return;
+
+    const apply = () => {
+      const h = Math.max(0, Math.floor(leftEl.getBoundingClientRect().height));
+      if (h) rightEl.style.height = `${h}px`;
+    };
+
+    apply();
+    const ro = new ResizeObserver(() => apply());
+    ro.observe(leftEl);
+    window.addEventListener("resize", apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, []);
+
   const [name, setName] = useState("");
   const [gender, setGender] = useState("男");
   const [newCategory, setNewCategory] = useState("臨打");
@@ -1892,6 +1915,9 @@ export default function App() {
   return (
     <div style={ui.page}>
       <style>{`
+        html, body {
+          overscroll-behavior: none;
+        }
         .layout {
           display: grid;
           grid-template-columns: 1.55fr 0.85fr;
@@ -1901,7 +1927,6 @@ export default function App() {
         .benchSticky {
           position: sticky;
           top: 10px;
-          height: calc(100vh - 20px);
           display: flex;
           flex-direction: column;
         }
@@ -2113,7 +2138,7 @@ export default function App() {
                   const ss = leftSec % 60;
                   return (
                     <span style={ui.badge} title="管理密碼免輸入剩餘時間">
-                      免輸入 {mm}:{String(ss).padStart(2, "0")}
+                      密碼免輸入倒數 {mm}:{String(ss).padStart(2, "0")}
                     </span>
                   );
                 })()}
@@ -2800,7 +2825,7 @@ export default function App() {
 
       <div className="layout">
         {/* Left */}
-        <div>
+        <div ref={leftColRef}>
           <div style={ui.sectionTitle}>
             <span>上場區（4 面）</span>
             <button
@@ -3026,7 +3051,7 @@ export default function App() {
         </div>
 
         {/* Right */}
-        <div className="benchSticky">
+        <div className="benchSticky" ref={benchStickyRef}>
           <div style={ui.sectionTitle}>
             <span>休息區</span>
 
@@ -3147,7 +3172,7 @@ export default function App() {
                   ) : null}
                 </div>
 
-                <div className="benchScrollArea">
+                <div className="benchScrollArea" style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
                   <div className="benchList2" style={ui.list2}>
                     {benchPlayers.map((p) => {
                       const disp = getDisplayForBench(p);
