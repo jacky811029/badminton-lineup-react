@@ -734,17 +734,11 @@ export default function App() {
   const [selectedId, setSelectedId] = useState("");
   const [tick, setTick] = useState(nowSec());
 
-  // ===== 長按（重置 / 費用設定）=====
-  const resetPressTimerRef = useRef(null);
+  // ===== 休息區單筆新增（避免佔版面）=====
+  const [benchAddOpen, setBenchAddOpen] = useState(false);
+
+  // ===== 長按（費用設定）=====
   const feePressTimerRef = useRef(null);
-
-  const ADMIN_HASH =
-    "94edf28c6d6da38fd35d7ad53e485307f89fbeaf120485c8d17a43f323deee71"; // 666666
-
-  function resetAllHard() {
-    dispatch({ type: "RESET_HARD" });
-    setSelectedId("");
-  }
 
   useEffect(() => {
     saveState(state);
@@ -865,6 +859,12 @@ export default function App() {
   }, [chargeOpen]);
 
   function openChargeModal() {
+    const input = prompt("請輸入管理密碼");
+    if (input === null) return;
+    if (String(input).trim() !== "6") {
+      alert("密碼錯誤");
+      return;
+    }
     setChargeOpen(true);
   }
 
@@ -1864,27 +1864,7 @@ export default function App() {
     setSelectedId("");
   }
 
-  // ===== 重置：長按版本號 3 秒 =====
-  function startResetPress() {
-    if (resetPressTimerRef.current) clearTimeout(resetPressTimerRef.current);
-    resetPressTimerRef.current = setTimeout(async () => {
-      const input = prompt("請輸入管理密碼");
-      if (input === null) return;
-      const hash = await sha256Hex(input);
-      if (hash === ADMIN_HASH) {
-        resetAllHard();
-        alert("系統已重置");
-      } else {
-        alert("密碼錯誤");
-      }
-    }, 3000);
-  }
-  function cancelResetPress() {
-    if (resetPressTimerRef.current) {
-      clearTimeout(resetPressTimerRef.current);
-      resetPressTimerRef.current = null;
-    }
-  }
+  // =====（管理密碼重置功能已移除）=====
 
   return (
     <div style={ui.page}>
@@ -2178,16 +2158,6 @@ export default function App() {
                       onChange={(e) => setCategoryFee("season", e.target.value)}
                     />
 
-                    <span style={ui.badge}>臨打</span>
-                    <input
-                      className={`${ctl} ${ctlPad}`}
-                      style={{ ...ui.input, width: 120 }}
-                      inputMode="numeric"
-                      placeholder="金額"
-                      value={state.config.feeCasual}
-                      onChange={(e) => setCategoryFee("casual", e.target.value)}
-                    />
-
                     <span style={ui.badge}>季繳請假</span>
                     <input
                       className={`${ctl} ${ctlPad}`}
@@ -2196,6 +2166,16 @@ export default function App() {
                       placeholder="金額"
                       value={state.config.feeLeave}
                       onChange={(e) => setCategoryFee("leave", e.target.value)}
+                    />
+
+                    <span style={ui.badge}>臨打</span>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, width: 120 }}
+                      inputMode="numeric"
+                      placeholder="金額"
+                      value={state.config.feeCasual}
+                      onChange={(e) => setCategoryFee("casual", e.target.value)}
                     />
                   </div>
 
@@ -2298,7 +2278,7 @@ export default function App() {
                       className={`${ctl} ${ctlPad}`}
                       style={{ ...ui.input, width: 90 }}
                       inputMode="numeric"
-                      placeholder="X桶"
+                      placeholder="數量"
                       value={state.ball?.buckets ?? ""}
                       onChange={(e) => setBallField("buckets", e.target.value)}
                     />
@@ -2307,7 +2287,7 @@ export default function App() {
                       className={`${ctl} ${ctlPad}`}
                       style={{ ...ui.input, width: 90 }}
                       inputMode="numeric"
-                      placeholder="Y顆"
+                      placeholder="數量"
                       value={state.ball?.balls ?? ""}
                       onChange={(e) => setBallField("balls", e.target.value)}
                     />
@@ -2320,7 +2300,7 @@ export default function App() {
                       className={`${ctl} ${ctlPad}`}
                       style={{ ...ui.input, width: 120 }}
                       inputMode="numeric"
-                      placeholder="Z元"
+                      placeholder="金額"
                       value={state.ball?.amount ?? ""}
                       onChange={(e) => setBallField("amount", e.target.value)}
                     />
@@ -3042,66 +3022,85 @@ export default function App() {
                     marginBottom: 10,
                   }}
                 >
-                  <div className="formRow" style={ui.formRow}>
-                    <input
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button
                       className={`${ctl} ${ctlPad}`}
-                      style={{ ...ui.input, minWidth: 160, flex: 1 }}
-                      placeholder="新增隊員姓名"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                    />
-                    <select
-                      className={`${ctl} ${ctlPad}`}
-                      style={ui.select}
-                      value={gender}
-                      onChange={(e) => setGender(e.target.value)}
+                      style={ui.btnSoft}
+                      onClick={() => setBenchAddOpen((v) => !v)}
+                      title={benchAddOpen ? "收起新增" : "新增名單"}
                     >
-                      <option value="男">男</option>
-                      <option value="女">女</option>
-                    </select>
-                    <select
-                      className={`${ctl} ${ctlPad}`}
-                      style={ui.select}
-                      value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value)}
-                      title="分類"
-                    >
-                      <option value="季繳">季繳</option>
-                      <option value="臨打">臨打</option>
-                      <option value="季繳請假">季繳請假</option>
-                    </select>
-                    {normalizeCategoryText(newCategory) === "季繳請假" ? (
-                      <>
+                      {benchAddOpen ? "－" : "＋"}
+                    </button>
+                    <div style={ui.micro}>單筆新增</div>
+                  </div>
+
+                  {benchAddOpen ? (
+                    <>
+                      <div className="formRow" style={{ ...ui.formRow, marginTop: 10 }}>
                         <input
                           className={`${ctl} ${ctlPad}`}
-                          style={{ ...ui.input, minWidth: 120, flex: 1 }}
-                          placeholder="替補姓名"
-                          value={subName}
-                          onChange={(e) => setSubName(e.target.value)}
+                          style={{ ...ui.input, minWidth: 160, flex: 1 }}
+                          placeholder="新增隊員姓名"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
                         />
                         <select
                           className={`${ctl} ${ctlPad}`}
                           style={ui.select}
-                          value={subGender}
-                          onChange={(e) => setSubGender(e.target.value)}
-                          title="替補性別"
+                          value={gender}
+                          onChange={(e) => setGender(e.target.value)}
                         >
                           <option value="男">男</option>
                           <option value="女">女</option>
                         </select>
-                      </>
-                    ) : null}
-                    <button
-                      className={`${ctl} ${ctlPad}`}
-                      style={ui.btn}
-                      onClick={addPlayer}
-                    >
-                      新增
-                    </button>
-                  </div>
-                  <div style={{ marginTop: 8, ...ui.micro }}>
-                    休息區新增名單可設定分類；季繳請假可填替補姓名/性別。
-                  </div>
+                        <select
+                          className={`${ctl} ${ctlPad}`}
+                          style={ui.select}
+                          value={newCategory}
+                          onChange={(e) => setNewCategory(e.target.value)}
+                          title="分類"
+                        >
+                          <option value="季繳">季繳</option>
+                          <option value="臨打">臨打</option>
+                          <option value="季繳請假">季繳請假</option>
+                        </select>
+                        {normalizeCategoryText(newCategory) === "季繳請假" ? (
+                          <>
+                            <input
+                              className={`${ctl} ${ctlPad}`}
+                              style={{ ...ui.input, minWidth: 120, flex: 1 }}
+                              placeholder="替補姓名"
+                              value={subName}
+                              onChange={(e) => setSubName(e.target.value)}
+                            />
+                            <select
+                              className={`${ctl} ${ctlPad}`}
+                              style={ui.select}
+                              value={subGender}
+                              onChange={(e) => setSubGender(e.target.value)}
+                              title="替補性別"
+                            >
+                              <option value="男">男</option>
+                              <option value="女">女</option>
+                            </select>
+                          </>
+                        ) : null}
+                        <button
+                          className={`${ctl} ${ctlPad}`}
+                          style={ui.btn}
+                          onClick={() => {
+                            addPlayer();
+                            setBenchAddOpen(false);
+                          }}
+                        >
+                          新增
+                        </button>
+                      </div>
+                      <div style={{ marginTop: 8, ...ui.micro }}>
+                        休息區新增名單可設定分類；季繳請假可填替補姓名/性別。
+                      </div>
+                    </>
+                  ) : null}
                 </div>
 
                 <div className="benchScrollArea">
@@ -3169,15 +3168,7 @@ export default function App() {
         </div>
       </div>
 
-      <div
-        style={{ ...ui.version, cursor: "pointer", userSelect: "none" }}
-        onMouseDown={startResetPress}
-        onMouseUp={cancelResetPress}
-        onMouseLeave={cancelResetPress}
-        onTouchStart={startResetPress}
-        onTouchEnd={cancelResetPress}
-        onTouchCancel={cancelResetPress}
-      >
+      <div style={{ ...ui.version, userSelect: "none" }}>
         {VERSION_NAME} · 更新時間：{VERSION_TIME}
       </div>
     </div>
