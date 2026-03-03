@@ -149,13 +149,12 @@ function sameFixedSlot(a, b) {
   return false;
 }
 
-function formatHMS(totalSeconds) {
+function formatMS(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds));
-  const hh = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
+  const mm = Math.floor(s / 60);
   const ss = s % 60;
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+  const pad2 = (n) => String(n).padStart(2, "0");
+  return `${mm}:${pad2(ss)}`;
 }
 
 function nowSec() {
@@ -1899,6 +1898,14 @@ export default function App() {
           gap: 12px;
           align-items: start;
         }
+        .benchSticky {
+          position: sticky;
+          top: 10px;
+          height: calc(100vh - 20px);
+          display: flex;
+          flex-direction: column;
+        }
+        .benchBox { flex: 1; min-height: 0; }
         .grid4 {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2095,7 +2102,22 @@ export default function App() {
                 marginBottom: 8,
               }}
             >
-              <div style={{ fontWeight: 900 }}>收費清單</div>
+              <div style={{ fontWeight: 900, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span>收費清單</span>
+                {(() => {
+                  const okUntil = Number(localStorage.getItem("badm_admin_ok_until") || 0);
+                  const leftMs = okUntil - Date.now();
+                  if (!Number.isFinite(leftMs) || leftMs <= 0) return null;
+                  const leftSec = Math.floor(leftMs / 1000);
+                  const mm = Math.floor(leftSec / 60);
+                  const ss = leftSec % 60;
+                  return (
+                    <span style={ui.badge} title="管理密碼免輸入剩餘時間">
+                      免輸入 {mm}:{String(ss).padStart(2, "0")}
+                    </span>
+                  );
+                })()}
+              </div>
               <button
                 className={`${ctl} ${ctlPad}`}
                 style={ui.btnSoft}
@@ -2833,7 +2855,7 @@ export default function App() {
                       >
                         <div style={ui.micro}>
                           {court.startTs
-                            ? `上場時間 ${formatHMS(elapsed)}`
+                            ? `上場時間 ${formatMS(elapsed)}`
                             : "未開始"}
                         </div>
                         <button
@@ -3010,12 +3032,12 @@ export default function App() {
 
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
-                className={`${ctl} ${ctlPad}`}
-                style={ui.btnSoft}
+                className={`${benchAddOpen ? ctlDanger : ctl} ${ctlPad}`}
+                style={benchAddOpen ? ui.btnDanger : ui.btnSoft}
                 onClick={() => setBenchAddOpen((v) => !v)}
-                title={benchAddOpen ? "收起單筆新增" : "單筆新增"}
+                title="休息區單筆新增"
               >
-                {benchAddOpen ? "－" : "＋"}
+                新增：{benchAddOpen ? "開" : "關"}
               </button>
 
               <button
@@ -3113,7 +3135,6 @@ export default function App() {
                           style={ui.btn}
                           onClick={() => {
                             addPlayer();
-                            setBenchAddOpen(false);
                           }}
                         >
                           新增
