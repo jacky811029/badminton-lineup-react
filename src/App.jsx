@@ -194,12 +194,24 @@ function genderOrder(g) {
   return g === "女" ? 0 : 1;
 }
 function comparePlayers(a, b) {
-  const ga = genderOrder(a?.gender);
-  const gb = genderOrder(b?.gender);
+  // NOTE: for "季繳請假" we sort by substitute identity so order matches what we display.
+  const catA = String(a?.category || "").trim();
+  const catB = String(b?.category || "").trim();
+
+  const hasSubA = catA === "季繳請假" && String(a?.subName || "").trim();
+  const hasSubB = catB === "季繳請假" && String(b?.subName || "").trim();
+
+  const nameA = hasSubA ? String(a?.subName || "").trim() : String(a?.name ?? "");
+  const nameB = hasSubB ? String(b?.subName || "").trim() : String(b?.name ?? "");
+
+  const genderA = hasSubA ? String(a?.subGender || "").trim() : String(a?.gender || "").trim();
+  const genderB = hasSubB ? String(b?.subGender || "").trim() : String(b?.gender || "").trim();
+
+  const ga = genderOrder(genderA);
+  const gb = genderOrder(genderB);
   if (ga !== gb) return ga - gb;
-  const na = String(a?.name ?? "");
-  const nb = String(b?.name ?? "");
-  return na.localeCompare(nb, "zh-TW", { numeric: true, sensitivity: "base" });
+
+  return nameA.localeCompare(nameB, "zh-TW", { numeric: true, sensitivity: "base" });
 }
 function sortIdsFilledFirst(ids, players, fixedLen = null) {
   const filled = ids.filter(Boolean).filter((id) => players[id]);
@@ -859,12 +871,22 @@ export default function App() {
   }, [chargeOpen]);
 
   function openChargeModal() {
+    const KEY = "badm_admin_ok_until";
+    const okUntil = Number(localStorage.getItem(KEY) || 0);
+    if (Number.isFinite(okUntil) && okUntil > Date.now()) {
+      setChargeOpen(true);
+      return;
+    }
+
     const input = prompt("請輸入管理密碼");
     if (input === null) return;
     if (String(input).trim() !== "6") {
       alert("密碼錯誤");
       return;
     }
+
+    // cache for 30 minutes
+    localStorage.setItem(KEY, String(Date.now() + 30 * 60 * 1000));
     setChargeOpen(true);
   }
 
@@ -1650,6 +1672,8 @@ export default function App() {
       backdropFilter: "blur(6px)",
       padding: 10,
       boxShadow: "0 10px 25px rgba(15,23,42,.05)",
+      // Keep the right column height aligned even when bench is collapsed.
+      minHeight: "62vh",
     },
     benchItem: {
       border: "1px solid rgba(15,23,42,.08)",
@@ -2986,6 +3010,15 @@ export default function App() {
 
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
+                className={`${ctl} ${ctlPad}`}
+                style={ui.btnSoft}
+                onClick={() => setBenchAddOpen((v) => !v)}
+                title={benchAddOpen ? "收起單筆新增" : "單筆新增"}
+              >
+                {benchAddOpen ? "－" : "＋"}
+              </button>
+
+              <button
                 className={`${state.ui.showDelete ? ctlDanger : ctl} ${ctlPad}`}
                 style={state.ui.showDelete ? ui.btnDanger : ui.btnSoft}
                 onClick={() => toggleSection("delete")}
@@ -3022,17 +3055,7 @@ export default function App() {
                     marginBottom: 10,
                   }}
                 >
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <button
-                      className={`${ctl} ${ctlPad}`}
-                      style={ui.btnSoft}
-                      onClick={() => setBenchAddOpen((v) => !v)}
-                      title={benchAddOpen ? "收起新增" : "新增名單"}
-                    >
-                      {benchAddOpen ? "－" : "＋"}
-                    </button>
-                    <div style={ui.micro}>單筆新增</div>
-                  </div>
+                  {/* 單筆新增按鈕移到標題列 */}
 
                   {benchAddOpen ? (
                     <>
