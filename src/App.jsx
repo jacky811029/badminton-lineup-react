@@ -2114,7 +2114,7 @@ export default function App() {
                 }}
                 title="名單匯入/匯出"
               >
-                名單
+                名單匯入/匯出
               </button>
 
               <span
@@ -2841,8 +2841,9 @@ export default function App() {
                     >
                       {court.slots.map((pid, si) => {
                         const p = pid ? state.players[pid] : null;
+                        const disp = p ? getDisplayForBench(p) : null;
                         const bg = p
-                          ? genderBg(p.gender)
+                          ? genderBg(disp.gender)
                           : "rgba(248,250,252,.9)";
 
                         return (
@@ -2877,7 +2878,7 @@ export default function App() {
                                 }}
                               >
                                 <span style={ui.nameStyle}>
-                                  {shortName(p.name, 7)}
+                                  {shortName(disp.name, 7)}
                                 </span>
                                 <span style={ui.pill}>{p.games}</span>
                               </div>
@@ -2932,8 +2933,9 @@ export default function App() {
                   >
                     {group.map((pid, si) => {
                       const p = pid ? state.players[pid] : null;
+                      const disp = p ? getDisplayForBench(p) : null;
                       const bg = p
-                        ? genderBg(p.gender)
+                        ? genderBg(disp.gender)
                         : "rgba(248,250,252,.9)";
 
                       return (
@@ -2968,7 +2970,7 @@ export default function App() {
                               }}
                             >
                               <span style={ui.nameStyle}>
-                                {shortName(p.name, 7)}
+                                {shortName(disp.name, 7)}
                               </span>
                               <span style={ui.pill}>{p.games}</span>
                             </div>
