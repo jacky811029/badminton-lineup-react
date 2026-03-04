@@ -1713,6 +1713,9 @@ export default function App() {
       boxShadow: "0 10px 25px rgba(15,23,42,.05)",
       // Keep the right column height aligned even when bench is collapsed.
       minHeight: "62vh",
+      display: "flex",
+      flexDirection: "column",
+      gap: 10,
     },
     benchItem: {
       border: "1px solid rgba(15,23,42,.08)",
@@ -3110,84 +3113,79 @@ export default function App() {
           >
             {state.ui.showBench ? (
               <>
-                <div
-                  className="cardBox"
-                  style={{
-                    ...ui.card,
-                    padding: 10,
-                    boxShadow: "none",
-                    marginBottom: 10,
-                  }}
-                >
-                  {/* 單筆新增按鈕移到標題列 */}
-
-                  {benchAddOpen ? (
-                    <>
-                      <div className="formRow" style={{ ...ui.formRow, marginTop: 10 }}>
-                        <input
-                          className={`${ctl} ${ctlPad}`}
-                          style={{ ...ui.input, minWidth: 160, flex: 1 }}
-                          placeholder="新增隊員姓名"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                        />
-                        <select
-                          className={`${ctl} ${ctlPad}`}
-                          style={ui.select}
-                          value={gender}
-                          onChange={(e) => setGender(e.target.value)}
-                        >
-                          <option value="男">男</option>
-                          <option value="女">女</option>
-                        </select>
-                        <select
-                          className={`${ctl} ${ctlPad}`}
-                          style={ui.select}
-                          value={newCategory}
-                          onChange={(e) => setNewCategory(e.target.value)}
-                          title="分類"
-                        >
-                          <option value="季繳">季繳</option>
-                          <option value="臨打">臨打</option>
-                          <option value="季繳請假">季繳請假</option>
-                        </select>
-                        {normalizeCategoryText(newCategory) === "季繳請假" ? (
-                          <>
-                            <input
-                              className={`${ctl} ${ctlPad}`}
-                              style={{ ...ui.input, minWidth: 120, flex: 1 }}
-                              placeholder="替補姓名"
-                              value={subName}
-                              onChange={(e) => setSubName(e.target.value)}
-                            />
-                            <select
-                              className={`${ctl} ${ctlPad}`}
-                              style={ui.select}
-                              value={subGender}
-                              onChange={(e) => setSubGender(e.target.value)}
-                              title="替補性別"
-                            >
-                              <option value="男">男</option>
-                              <option value="女">女</option>
-                            </select>
-                          </>
-                        ) : null}
-                        <button
-                          className={`${ctl} ${ctlPad}`}
-                          style={ui.btn}
-                          onClick={() => {
-                            addPlayer();
-                          }}
-                        >
-                          新增
-                        </button>
-                      </div>
-                      <div style={{ marginTop: 8, ...ui.micro }}>
-                        休息區新增名單可設定分類；季繳請假可填替補姓名/性別。
-                      </div>
-                    </>
-                  ) : null}
-                </div>
+                {benchAddOpen ? (
+                  <div
+                    className="cardBox"
+                    style={{
+                      ...ui.card,
+                      padding: 10,
+                      boxShadow: "none",
+                    }}
+                  >
+                    <div className="formRow" style={ui.formRow}>
+                      <input
+                        className={`${ctl} ${ctlPad}`}
+                        style={{ ...ui.input, minWidth: 160, flex: 1 }}
+                        placeholder="新增隊員姓名"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                      />
+                      <select
+                        className={`${ctl} ${ctlPad}`}
+                        style={ui.select}
+                        value={gender}
+                        onChange={(e) => setGender(e.target.value)}
+                      >
+                        <option value="男">男</option>
+                        <option value="女">女</option>
+                      </select>
+                      <select
+                        className={`${ctl} ${ctlPad}`}
+                        style={ui.select}
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        title="分類"
+                      >
+                        <option value="季繳">季繳</option>
+                        <option value="臨打">臨打</option>
+                        <option value="季繳請假">季繳請假</option>
+                      </select>
+                      {normalizeCategoryText(newCategory) === "季繳請假" ? (
+                        <>
+                          <input
+                            className={`${ctl} ${ctlPad}`}
+                            style={{ ...ui.input, minWidth: 120, flex: 1 }}
+                            placeholder="替補姓名"
+                            value={subName}
+                            onChange={(e) => setSubName(e.target.value)}
+                          />
+                          <select
+                            className={`${ctl} ${ctlPad}`}
+                            style={ui.select}
+                            value={subGender}
+                            onChange={(e) => setSubGender(e.target.value)}
+                            title="替補性別"
+                          >
+                            <option value="男">男</option>
+                            <option value="女">女</option>
+                          </select>
+                        </>
+                      ) : null}
+                      <button
+                        className={`${ctl} ${ctlPad}`}
+                        style={ui.btn}
+                        onClick={() => {
+                          addPlayer();
+                        }}
+                      >
+                        新增
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 8, ...ui.micro }}>
+                      休息區新增名單可設定分類；季繳請假可填替補姓名/性別。
+                    </div>
+                  </div>
+                ) : null}
 
                 <div
                   ref={benchScrollRef}
