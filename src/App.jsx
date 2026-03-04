@@ -1970,13 +1970,32 @@ export default function App() {
           .benchList2 { grid-template-columns: 1fr !important; }
         }
 
-        /* iPad Air 橫向（1024~1366）右側休息區 sticky + 緊湊化 */
+        /* iPad Air 橫向（1024~1366）：右側休息區吃滿高度，清單可捲動（避免下方留白） */
         @media (min-width: 1024px) and (max-width: 1366px) and (orientation: landscape) {
           .layout { grid-template-columns: 1.75fr 0.75fr !important; gap: 10px !important; }
           .grid4 { gap: 8px !important; }
-          .benchSticky { position: sticky; top: 10px; }
+
+          /* 右側整欄維持 sticky，但要有明確高度讓內容能撐滿 */
+          .benchSticky {
+            position: sticky;
+            top: 10px;
+            height: calc(100vh - 96px);
+          }
+          .benchBox {
+            padding: 8px !important;
+            border-radius: 16px !important;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+          }
+          /* 讓清單吃滿剩餘高度（原本的 max-height clamp 會在 iPad 橫向造成留白） */
+          .benchScrollArea {
+            flex: 1 !important;
+            min-height: 0 !important;
+            max-height: none !important;
+          }
+
           .cardBox { padding: 8px !important; border-radius: 16px !important; }
-          .benchBox { padding: 8px !important; border-radius: 16px !important; }
           .slotBox { min-height: 30px !important; padding: 5px 7px !important; }
           .benchItemBox { padding: 7px 9px !important; }
           .ctlPadFix { padding: 8px 10px !important; }
