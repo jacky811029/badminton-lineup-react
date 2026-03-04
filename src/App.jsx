@@ -777,6 +777,7 @@ export default function App() {
 
   // ===== 休息區單筆新增（避免佔版面）=====
   const [benchAddOpen, setBenchAddOpen] = useState(false);
+  const benchScrollRef = useRef(null);
 
   // ===== 長按（費用設定）=====
   const feePressTimerRef = useRef(null);
@@ -992,6 +993,15 @@ export default function App() {
       benchPushFront(next, id);
       return next;
     });
+
+    setSelectedId(id);
+    // Ensure the newly added item is visible immediately.
+    setTimeout(() => {
+      const el = document.getElementById(`bench-${id}`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+      const box = benchScrollRef.current;
+      if (box && box.scrollTo) box.scrollTo({ top: 0 });
+    }, 0);
 
     setName("");
     // Keep gender; reset category/sub fields for next quick add.
@@ -3179,7 +3189,11 @@ export default function App() {
                   ) : null}
                 </div>
 
-                <div className="benchScrollArea" style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
+                <div
+                  ref={benchScrollRef}
+                  className="benchScrollArea"
+                  style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}
+                >
                   <div className="benchList2" style={ui.list2}>
                     {benchPlayers.map((p) => {
                       const disp = getDisplayForBench(p);
@@ -3188,6 +3202,7 @@ export default function App() {
 
                       return (
                         <div
+                          id={`bench-${p.id}`}
                           key={p.id}
                           className="benchItemBox"
                           draggable
