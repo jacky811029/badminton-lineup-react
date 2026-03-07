@@ -19,7 +19,7 @@ import React, {
  * 7) 分類費用：textbox 前保留分類名稱
  * 8) 歷史清單：顯示各分類金額 + 各分類人數
  */
-const VERSION_NAME = "v1.2.1";
+const VERSION_NAME = "v1.3.0";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
