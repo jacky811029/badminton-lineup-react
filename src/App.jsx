@@ -790,8 +790,7 @@ export default function App() {
   const [benchAddOpen, setBenchAddOpen] = useState(false);
   const benchScrollRef = useRef(null);
 
-  // ===== 長按（費用設定）=====
-  const feePressTimerRef = useRef(null);
+  // （已移除）費用設定長按輸入
 
   useEffect(() => {
     saveState(state);
@@ -942,29 +941,9 @@ export default function App() {
     setChargeDate(s);
   }
 
-  // ===== 費用設定：長按 3 秒（舊：頂部顯示用）=====
-  function startFeePress() {
-    if (feePressTimerRef.current) clearTimeout(feePressTimerRef.current);
-    feePressTimerRef.current = setTimeout(() => {
-      const fee = prompt("請輸入臨打費用（例如：150）", state.config?.feeText || "");
-      if (fee === null) return;
-      const payTo = prompt("請輸入繳費給（例如：阿宏）", state.config?.payTo || "");
-      if (payTo === null) return;
-
-      applyState((prev) => {
-        const next = structuredClone(normalize(prev));
-        next.config.feeText = String(fee);
-        next.config.payTo = String(payTo);
-        return next;
-      });
-    }, 3000);
-  }
-  function cancelFeePress() {
-    if (feePressTimerRef.current) {
-      clearTimeout(feePressTimerRef.current);
-      feePressTimerRef.current = null;
-    }
-  }
+  // ===== 費用設定（第 5 項）：取消長按手動輸入，改自動帶值 =====
+  // - 臨打費用：來自「分類費用設定」的臨打金額（feeCasual）
+  // - 繳費給：來自「總務股長」（chief）
 
   // ===== 人員操作 =====
   function addPlayer() {
@@ -1356,13 +1335,13 @@ export default function App() {
   }, [state.players]);
 
   const feeLine = useMemo(() => {
-    const fee = (state.config?.feeText || "").trim();
-    const payTo = (state.config?.payTo || "").trim();
+    const fee = String(state.config?.feeCasual ?? "").trim();
+    const payTo = String(state.config?.chief ?? "").trim();
     if (!fee && !payTo) return "";
     if (fee && payTo) return `臨打費用$${fee}，繳費給: ${payTo}`;
     if (fee && !payTo) return `臨打費用$${fee}`;
     return `繳費給: ${payTo}`;
-  }, [state.config?.feeText, state.config?.payTo]);
+  }, [state.config?.feeCasual, state.config?.chief]);
 
   // ===== 收費表資料 =====
   function parseMoney(v) {
@@ -2874,18 +2853,11 @@ export default function App() {
             <span
               style={{
                 ...ui.badge,
-                cursor: "pointer",
                 borderColor: "rgba(244,63,94,.25)",
               }}
-              title="長按 3 秒設定臨打費用/繳費（僅顯示在頂部）"
-              onMouseDown={startFeePress}
-              onMouseUp={cancelFeePress}
-              onMouseLeave={cancelFeePress}
-              onTouchStart={startFeePress}
-              onTouchEnd={cancelFeePress}
-              onTouchCancel={cancelFeePress}
+              title="臨打費用：取自分類費用設定；繳費給：取自總務股長"
             >
-              {feeLine ? feeLine : "臨打費用/繳費（長按3秒設定）"}
+              {feeLine ? feeLine : "臨打費用/繳費（自動帶值）"}
             </span>
           </div>
 
