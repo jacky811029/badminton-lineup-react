@@ -19,7 +19,7 @@ import React, {
  * 7) 分類費用：textbox 前保留分類名稱
  * 8) 歷史清單：顯示各分類金額 + 各分類人數
  */
-const VERSION_NAME = "v1.3.3";
+const VERSION_NAME = "v1.3.4";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -1694,20 +1694,29 @@ export default function App() {
 
   function startEditHistory(item) {
     setHistEditKey(item.date);
+
+    // UI 顯示用：金額一律用千分位（不帶「元」），數量欄位預設顯示數量。
     setHistDraft({
       date: item.date,
+
+      // counts
       totalPeople: String(item.totalPeople ?? 0),
       seasonCount: String(item.counts?.season ?? 0),
       casualCount: String(item.counts?.casual ?? 0),
       leaveCount: String(item.counts?.leave ?? 0),
-      seasonAmt: String(item.subtotal?.season ?? 0),
-      casualAmt: String(item.subtotal?.casual ?? 0),
-      leaveAmt: String(item.subtotal?.leave ?? 0),
-      totalAmt: String(item.subtotal?.total ?? 0),
-      collectedAmt: String(item.subtotal?.collected ?? 0),
-      buckets: String(item.ball?.buckets ?? ""),
-      balls: String(item.ball?.balls ?? ""),
-      ballAmt: String(item.ball?.amount ?? ""),
+
+      // money (thousand-separated)
+      seasonAmt: fmtMoney(item.subtotal?.season ?? 0),
+      casualAmt: fmtMoney(item.subtotal?.casual ?? 0),
+      leaveAmt: fmtMoney(item.subtotal?.leave ?? 0),
+      totalAmt: fmtMoney(item.subtotal?.total ?? 0),
+      collectedAmt: fmtMoney(item.subtotal?.collected ?? 0),
+
+      // ball
+      buckets: String(item.ball?.buckets ?? 0),
+      balls: String(item.ball?.balls ?? 0),
+      ballAmt: fmtMoney(parseMoney(item.ball?.amount ?? 0)),
+
       chief: String(item.chief ?? ""),
       memo: String(item.memo ?? ""),
     });
@@ -2474,10 +2483,11 @@ export default function App() {
                     </div>
 
                     <div className="formRow" style={{ ...ui.formRow, alignItems: "flex-start" }}>
-                      <span style={ui.micro}>Memo：</span>
+                      <span style={ui.micro}>MEMO：</span>
                       <textarea
                         className={`${ctl} ${ctlPad}`}
-                        style={{ ...ui.input, width: "min(720px, 100%)", minHeight: 72, resize: "vertical" }}
+                        rows={1}
+                        style={{ ...ui.input, width: "min(720px, 100%)", minHeight: 34, resize: "vertical" }}
                         placeholder="備註（例如：臨打有誰先幫忙墊付、用球原因等）"
                         value={state.chargeMemo ?? ""}
                         onChange={(e) => setChargeMemo(e.target.value)}
@@ -3372,12 +3382,23 @@ export default function App() {
 
                       <input
                         className={`${ctl} ${ctlPad}`}
-                        style={{ ...ui.input, minWidth: 160, flex: 1 }}
+                        style={{
+                          ...ui.input,
+                          minWidth: 160,
+                          flex: 1,
+                          backgroundColor:
+                            normalizeCategoryText(benchUpdateCategory) === "季繳" ||
+                            normalizeCategoryText(benchUpdateCategory) === "季繳請假"
+                              ? "#E5E7EB"
+                              : ui.input.backgroundColor,
+                        }}
                         placeholder="名字"
                         value={benchUpdateName}
                         onChange={(e) => setBenchUpdateName(e.target.value)}
-                        disabled={normalizeCategoryText(benchUpdateCategory) === "季繳" ||
-                          normalizeCategoryText(benchUpdateCategory) === "季繳請假"}
+                        disabled={
+                          normalizeCategoryText(benchUpdateCategory) === "季繳" ||
+                          normalizeCategoryText(benchUpdateCategory) === "季繳請假"
+                        }
                         title={
                           normalizeCategoryText(benchUpdateCategory) === "季繳" ||
                           normalizeCategoryText(benchUpdateCategory) === "季繳請假"
@@ -3388,7 +3409,14 @@ export default function App() {
 
                       <select
                         className={`${ctl} ${ctlPad}`}
-                        style={ui.select}
+                        style={{
+                          ...ui.select,
+                          backgroundColor:
+                            normalizeCategoryText(benchUpdateCategory) === "季繳" ||
+                            normalizeCategoryText(benchUpdateCategory) === "季繳請假"
+                              ? "#E5E7EB"
+                              : ui.select.backgroundColor,
+                        }}
                         value={benchUpdateGender}
                         onChange={(e) => setBenchUpdateGender(e.target.value)}
                         title={
@@ -3397,8 +3425,10 @@ export default function App() {
                             ? "此分類不允許修改性別"
                             : "性別"
                         }
-                        disabled={normalizeCategoryText(benchUpdateCategory) === "季繳" ||
-                          normalizeCategoryText(benchUpdateCategory) === "季繳請假"}
+                        disabled={
+                          normalizeCategoryText(benchUpdateCategory) === "季繳" ||
+                          normalizeCategoryText(benchUpdateCategory) === "季繳請假"
+                        }
                       >
                         <option value="男">男</option>
                         <option value="女">女</option>
