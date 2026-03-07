@@ -19,7 +19,7 @@ import React, {
  * 7) 分類費用：textbox 前保留分類名稱
  * 8) 歷史清單：顯示各分類金額 + 各分類人數
  */
-const VERSION_NAME = "v1.3.0";
+const VERSION_NAME = "v1.3.1";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -1431,11 +1431,11 @@ export default function App() {
 
   const feeLine = useMemo(() => {
     const fee = String(state.config?.feeCasual ?? "").trim();
-    const payTo = String(state.config?.chief ?? "").trim();
-    if (!fee && !payTo) return "";
-    if (fee && payTo) return `臨打費用$${fee}，繳費給: ${payTo}`;
-    if (fee && !payTo) return `臨打費用$${fee}`;
-    return `繳費給: ${payTo}`;
+    const chief = String(state.config?.chief ?? "").trim();
+    if (!fee && !chief) return "";
+    if (fee && chief) return `臨打費用$${fee}，繳費給（總務股長）: ${chief}`;
+    if (fee && !chief) return `臨打費用$${fee}，繳費給（總務股長）：（未填）`;
+    return `繳費給（總務股長）: ${chief}`;
   }, [state.config?.feeCasual, state.config?.chief]);
 
   // ===== 收費表資料 =====
@@ -1632,7 +1632,6 @@ export default function App() {
       const total = seasonAmt + casualAmt + leaveAmt;
 
       const chiefRaw = String(next.config?.chief ?? "").trim();
-      const chiefFallback = String(next.config?.payTo ?? "").trim();
 
       const record = {
         date,
@@ -1651,7 +1650,7 @@ export default function App() {
           amount: String(next.ball?.amount ?? ""),
         },
         memo: String(next.chargeMemo ?? ""),
-        chief: chiefRaw || chiefFallback,
+        chief: chiefRaw,
       };
 
       const idx = next.dailyHistory.findIndex((x) => x.date === date);
@@ -2395,11 +2394,7 @@ export default function App() {
                     <input
                       className={`${ctl} ${ctlPad}`}
                       style={{ ...ui.input, width: 160 }}
-                      placeholder={
-                        (state.config?.payTo || "").trim()
-                          ? `預設：${String(state.config.payTo).trim()}`
-                          : "人名"
-                      }
+                      placeholder="人名"
                       value={state.config.chief}
                       onChange={(e) => setCategoryFee("chief", e.target.value)}
                     />
@@ -3493,7 +3488,10 @@ export default function App() {
                           className="benchItemBox"
                           draggable
                           onDragStart={(e) => dragStart(e, p.id)}
-                          onClick={() => pickPlayer(p.id)}
+                          onClick={() => {
+                            pickPlayer(p.id);
+                            if (benchUpdateOpen) loadBenchUpdateFromPlayer(p.id);
+                          }}
                           style={{
                             ...ui.benchItem,
                             background: genderBg(displayGender),
