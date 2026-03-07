@@ -19,7 +19,7 @@ import React, {
  * 7) 分類費用：textbox 前保留分類名稱
  * 8) 歷史清單：顯示各分類金額 + 各分類人數
  */
-const VERSION_NAME = "v1.3.1";
+const VERSION_NAME = "v1.3.2";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -934,8 +934,8 @@ export default function App() {
       return;
     }
 
-    // cache for 30 minutes
-    localStorage.setItem(KEY, String(Date.now() + 30 * 60 * 1000));
+    // cache for 3 minutes
+    localStorage.setItem(KEY, String(Date.now() + 3 * 60 * 1000));
     setChargeOpen(true);
   }
 
@@ -1038,21 +1038,26 @@ export default function App() {
       return;
     }
 
+    const cat = normalizeCategoryText(benchUpdateCategory);
+
+    // 依分類限制可修改欄位
+    // - 季繳：名字/性別不可改，只允許改分類
+    // - 季繳請假：名字/性別不可改，只允許改分類 + 替補
+    // - 臨打：允許改分類 + 名字 + 性別
+    const isSeason = cat === "季繳";
+    const isLeave = cat === "季繳請假";
+
     const origName = String(benchUpdateName || "").trim();
     if (!origName) {
       alert("名字不能為空。");
       return;
     }
 
-    const cat = normalizeCategoryText(benchUpdateCategory);
     const origGender = normalizeGenderText(benchUpdateGender);
-    const subName = cat === "季繳請假" ? String(benchUpdateSubName || "").trim() : "";
-    const subGender =
-      cat === "季繳請假" && subName
-        ? normalizeGenderText(benchUpdateSubGender)
-        : "";
+    const subName = isLeave ? String(benchUpdateSubName || "").trim() : "";
+    const subGender = isLeave && subName ? normalizeGenderText(benchUpdateSubGender) : "";
 
-    const effectiveNameBase = cat === "季繳請假" && subName ? subName : origName;
+    const effectiveNameBase = isLeave && subName ? subName : origName;
 
     const nameConflict = Object.values(state.players || {}).some((p) => {
       if (!p || p.id === pid) return false;
@@ -1072,21 +1077,28 @@ export default function App() {
       const p = next.players?.[pid];
       if (!p) return prev;
 
+      // 欄位鎖定：若分類為季繳/季繳請假，名字與性別沿用原本（不可修改）
+      const lockedOrigName = isSeason || isLeave ? String(p.origName ?? p.name ?? "") : origName;
+      const lockedOrigGender =
+        isSeason || isLeave
+          ? normalizeGenderText(p.origGender ?? p.gender ?? "男")
+          : origGender;
+
       // Mirror roster import behavior:
       // - name/gender are display fields
       // - origName/origGender/subName/subGender are for charge/export
-      const effectiveName = cat === "季繳請假" && subName ? subName : origName;
-      const effectiveGender = cat === "季繳請假" && subName ? subGender : origGender;
+      const effectiveName = isLeave && subName ? subName : lockedOrigName;
+      const effectiveGender = isLeave && subName ? subGender : lockedOrigGender;
 
       next.players[pid] = {
         ...p,
         name: effectiveName,
         gender: effectiveGender,
         category: cat,
-        origName,
-        origGender,
-        subName: cat === "季繳請假" ? subName : "",
-        subGender: cat === "季繳請假" ? subGender : "",
+        origName: lockedOrigName,
+        origGender: lockedOrigGender,
+        subName: isLeave ? subName : "",
+        subGender: isLeave ? subGender : "",
       };
 
       return next;
@@ -1433,9 +1445,9 @@ export default function App() {
     const fee = String(state.config?.feeCasual ?? "").trim();
     const chief = String(state.config?.chief ?? "").trim();
     if (!fee && !chief) return "";
-    if (fee && chief) return `臨打費用$${fee}，繳費給（總務股長）: ${chief}`;
-    if (fee && !chief) return `臨打費用$${fee}，繳費給（總務股長）：（未填）`;
-    return `繳費給（總務股長）: ${chief}`;
+    if (fee && chief) return `臨打費用$${fee}，繳費給總務股長: ${chief}`;
+    if (fee && !chief) return `臨打費用$${fee}，繳費給總務股長：（未填）`;
+    return `繳費給總務股長: ${chief}`;
   }, [state.config?.feeCasual, state.config?.chief]);
 
   // ===== 收費表資料 =====
@@ -3384,23 +3396,7 @@ export default function App() {
                     }}
                   >
                     <div className="formRow" style={ui.formRow}>
-                      <select
-                        className={`${ctl} ${ctlPad}`}
-                        style={{ ...ui.select, minWidth: 220, flex: 1 }}
-                        value={benchUpdateId}
-                        onChange={(e) => loadBenchUpdateFromPlayer(e.target.value)}
-                        title="選擇要更新的名條"
-                      >
-                        <option value="">（選擇名條）</option>
-                        {benchPlayers.map((p) => {
-                          const disp = getDisplayForBench(p);
-                          return (
-                            <option key={p.id} value={p.id}>
-                              {disp.name}（{disp.gender}）
-                            </option>
-                          );
-                        })}
-                      </select>
+                      {/* 更新模式：不顯示「選擇名條」下拉。改由點選右側名條載入。 */}
 
                       <input
                         className={`${ctl} ${ctlPad}`}
@@ -3408,6 +3404,14 @@ export default function App() {
                         placeholder="名字"
                         value={benchUpdateName}
                         onChange={(e) => setBenchUpdateName(e.target.value)}
+                        disabled={normalizeCategoryText(benchUpdateCategory) === "季繳" ||
+                          normalizeCategoryText(benchUpdateCategory) === "季繳請假"}
+                        title={
+                          normalizeCategoryText(benchUpdateCategory) === "季繳" ||
+                          normalizeCategoryText(benchUpdateCategory) === "季繳請假"
+                            ? "此分類不允許修改名字"
+                            : "名字"
+                        }
                       />
 
                       <select
@@ -3415,7 +3419,14 @@ export default function App() {
                         style={ui.select}
                         value={benchUpdateGender}
                         onChange={(e) => setBenchUpdateGender(e.target.value)}
-                        title="性別"
+                        title={
+                          normalizeCategoryText(benchUpdateCategory) === "季繳" ||
+                          normalizeCategoryText(benchUpdateCategory) === "季繳請假"
+                            ? "此分類不允許修改性別"
+                            : "性別"
+                        }
+                        disabled={normalizeCategoryText(benchUpdateCategory) === "季繳" ||
+                          normalizeCategoryText(benchUpdateCategory) === "季繳請假"}
                       >
                         <option value="男">男</option>
                         <option value="女">女</option>
@@ -3459,13 +3470,15 @@ export default function App() {
                         className={`${ctl} ${ctlPad}`}
                         style={ui.btn}
                         onClick={updateBenchPlayer}
+                        disabled={!String(benchUpdateId || "").trim()}
+                        title={!String(benchUpdateId || "").trim() ? "請先點選右側名條" : "更新"}
                       >
                         更新
                       </button>
                     </div>
 
                     <div style={{ marginTop: 8, ...ui.micro }}>
-                      更新後的名條會沿用既有排序/顯示/收費等邏輯。
+                      更新模式：請先點選右側要更新的名條載入。更新後會沿用既有排序/顯示/收費等邏輯。
                     </div>
                   </div>
                 ) : null}
