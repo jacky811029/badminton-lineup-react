@@ -2342,8 +2342,8 @@ export default function App() {
                     <div style={ui.micro}>
                       小計（依分類）：
                       季繳{chargeStats.counts.season}人{fmtMoneyYuan(chargeStats.subtotal.season)}｜
-                      臨打{chargeStats.counts.casual}人{fmtMoneyYuan(chargeStats.subtotal.casual)}｜
-                      季繳請假{chargeStats.counts.leave}人{fmtMoneyYuan(chargeStats.subtotal.leave)}
+                      季繳請假{chargeStats.counts.leave}人{fmtMoneyYuan(chargeStats.subtotal.leave)}｜
+                      臨打{chargeStats.counts.casual}人{fmtMoneyYuan(chargeStats.subtotal.casual)}
                     </div>
                     <div style={ui.micro}>
                       總計（全部）：{fmtMoneyYuan(chargeStats.subtotal.total)}｜
