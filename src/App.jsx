@@ -522,6 +522,9 @@ function initialState() {
       feeSeason: "", // 季繳
       feeCasual: "", // 臨打
       feeLeave: "", // 季繳請假
+
+      // ✅ 分類費用設定：總務股長
+      chief: "",
     },
 
     payments,
@@ -646,6 +649,7 @@ function normalize(st) {
     feeSeason: String(next.config?.feeSeason ?? base.config.feeSeason),
     feeCasual: String(next.config?.feeCasual ?? base.config.feeCasual),
     feeLeave: String(next.config?.feeLeave ?? base.config.feeLeave),
+    chief: String(next.config?.chief ?? base.config.chief ?? ""),
   };
 
   const pay = next.payments && typeof next.payments === "object" ? next.payments : {};
@@ -1472,6 +1476,7 @@ export default function App() {
       if (key === "season") next.config.feeSeason = String(v);
       if (key === "casual") next.config.feeCasual = String(v);
       if (key === "leave") next.config.feeLeave = String(v);
+      if (key === "chief") next.config.chief = String(v);
       return next;
     });
   }
@@ -2299,6 +2304,19 @@ export default function App() {
                       placeholder="金額"
                       value={state.config.feeCasual}
                       onChange={(e) => setCategoryFee("casual", e.target.value)}
+                    />
+
+                    <span style={ui.badge}>總務股長</span>
+                    <input
+                      className={`${ctl} ${ctlPad}`}
+                      style={{ ...ui.input, width: 160 }}
+                      placeholder={
+                        (state.config?.payTo || "").trim()
+                          ? `預設：${String(state.config.payTo).trim()}`
+                          : "人名"
+                      }
+                      value={state.config.chief}
+                      onChange={(e) => setCategoryFee("chief", e.target.value)}
                     />
                   </div>
 
