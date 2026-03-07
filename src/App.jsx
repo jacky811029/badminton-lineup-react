@@ -19,7 +19,7 @@ import React, {
  * 7) 分類費用：textbox 前保留分類名稱
  * 8) 歷史清單：顯示各分類金額 + 各分類人數
  */
-const VERSION_NAME = "v1.3.4";
+const VERSION_NAME = "v1.3.5";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -3390,7 +3390,7 @@ export default function App() {
                             normalizeCategoryText(benchUpdateCategory) === "季繳" ||
                             normalizeCategoryText(benchUpdateCategory) === "季繳請假"
                               ? "#E5E7EB"
-                              : ui.input.backgroundColor,
+                              : ui.input.background,
                         }}
                         placeholder="名字"
                         value={benchUpdateName}
@@ -3415,7 +3415,7 @@ export default function App() {
                             normalizeCategoryText(benchUpdateCategory) === "季繳" ||
                             normalizeCategoryText(benchUpdateCategory) === "季繳請假"
                               ? "#E5E7EB"
-                              : ui.select.backgroundColor,
+                              : ui.select.background,
                         }}
                         value={benchUpdateGender}
                         onChange={(e) => setBenchUpdateGender(e.target.value)}
