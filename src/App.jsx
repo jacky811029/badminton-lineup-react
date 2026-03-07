@@ -19,7 +19,7 @@ import React, {
  * 7) 分類費用：textbox 前保留分類名稱
  * 8) 歷史清單：顯示各分類金額 + 各分類人數
  */
-const VERSION_NAME = "v1.3.2";
+const VERSION_NAME = "v1.3.3";
 const VERSION_TIME = new Date().toLocaleString("zh-TW", {
   year: "numeric",
   month: "2-digit",
@@ -2620,21 +2620,6 @@ export default function App() {
                                 }}
                               >
                                 <span style={ui.badge}>{h.date}</span>
-                                <span style={ui.badge}>人數 {h.totalPeople}</span>
-
-                                <span style={ui.badge}>
-                                  季繳{h.counts?.season ?? 0}人{fmtMoneyYuan(h.subtotal?.season ?? 0)}
-                                </span>
-                                <span style={ui.badge}>
-                                  臨打{h.counts?.casual ?? 0}人{fmtMoneyYuan(h.subtotal?.casual ?? 0)}
-                                </span>
-                                <span style={ui.badge}>
-                                  季繳請假{h.counts?.leave ?? 0}人{fmtMoneyYuan(h.subtotal?.leave ?? 0)}
-                                </span>
-
-                                <span style={ui.badge}>總計 {fmtMoneyYuan(h.subtotal?.total ?? 0)}</span>
-                                <span style={ui.badge}>已收費 {fmtMoneyYuan(h.subtotal?.collected ?? 0)}</span>
-
                                 <div style={{ flex: 1 }} />
 
                                 <button
@@ -2653,17 +2638,25 @@ export default function App() {
                                 </button>
                               </div>
 
-                              <div style={{ marginTop: 6, ...ui.micro }}>
-                                用球：{String(h.ball?.buckets || 0)}桶{String(h.ball?.balls || 0)}顆｜
-                                金額 {fmtMoneyYuan(parseMoney(h.ball?.amount || 0))}
-                              </div>
+                              <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                                <div style={ui.micro}>
+                                  人數：{h.totalPeople}｜
+                                  季繳 {h.counts?.season ?? 0} 人 {fmtMoneyYuan(h.subtotal?.season ?? 0)}｜
+                                  季繳請假 {h.counts?.leave ?? 0} 人 {fmtMoneyYuan(h.subtotal?.leave ?? 0)}｜
+                                  臨打 {h.counts?.casual ?? 0} 人 {fmtMoneyYuan(h.subtotal?.casual ?? 0)}
+                                </div>
 
-                              <div style={{ marginTop: 4, ...ui.micro }}>
-                                總務股長：{String(h.chief || "") || "（未填）"}
-                              </div>
+                                <div style={ui.micro}>
+                                  總計：{fmtMoneyYuan(h.subtotal?.total ?? 0)}｜
+                                  已收費：{fmtMoneyYuan(h.subtotal?.collected ?? 0)}
+                                </div>
 
-                              <div style={{ marginTop: 4, ...ui.micro }}>
-                                Memo：{String(h.memo || "") || "（無）"}
+                                <div style={ui.micro}>
+                                  用球：{String(h.ball?.buckets || 0)}桶{String(h.ball?.balls || 0)}顆（{fmtMoneyYuan(parseMoney(h.ball?.amount || 0))}）
+                                </div>
+
+                                <div style={ui.micro}>總務股長：{String(h.chief || "") || "（未填）"}</div>
+                                <div style={ui.micro}>MEMO：{String(h.memo || "") || "（無）"}</div>
                               </div>
                             </>
                           ) : (
@@ -2858,10 +2851,11 @@ export default function App() {
                                 </div>
 
                                 <div className="formRow" style={{ ...ui.formRow, alignItems: "flex-start" }}>
-                                  <span style={ui.badge}>Memo</span>
+                                  <span style={ui.badge}>MEMO</span>
                                   <textarea
                                     className={`${ctl} ${ctlPad}`}
-                                    style={{ ...ui.input, width: "min(720px, 100%)", minHeight: 72, resize: "vertical" }}
+                                    rows={1}
+                                    style={{ ...ui.input, width: "min(720px, 100%)", minHeight: 34, resize: "vertical" }}
                                     placeholder="備註"
                                     value={histDraft.memo}
                                     onChange={(e) =>
@@ -3028,18 +3022,9 @@ export default function App() {
         <div ref={leftColRef}>
           <div style={ui.sectionTitle}>
             <span>上場區（4 面）</span>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => toggleSection("courts")}
-              title={state.ui.showCourts ? "收折" : "展開"}
-            >
-              {state.ui.showCourts ? "▾" : "▸"}
-            </button>
           </div>
 
-          {state.ui.showCourts ? (
-            <div className="grid4">
+          <div className="grid4">
               {state.courts.map((court, ci) => {
                 const empty = isAllEmpty(court.slots);
                 const elapsed = court.startTs
@@ -3155,22 +3140,12 @@ export default function App() {
                 );
               })}
             </div>
-          ) : null}
 
           <div style={{ ...ui.sectionTitle, marginTop: 14 }}>
             <span>排隊區（4 組：順位 1~4）</span>
-            <button
-              className={`${ctl} ${ctlPad}`}
-              style={ui.btnSoft}
-              onClick={() => toggleSection("queues")}
-              title={state.ui.showQueues ? "收折" : "展開"}
-            >
-              {state.ui.showQueues ? "▾" : "▸"}
-            </button>
           </div>
 
-          {state.ui.showQueues ? (
-            <div className="grid4">
+          <div className="grid4">
               {state.queues.map((group, gi) => (
                 <div key={gi} className="cardBox" style={ui.card}>
                   <div
@@ -3247,15 +3222,22 @@ export default function App() {
                 </div>
               ))}
             </div>
-          ) : null}
         </div>
 
         {/* Right */}
         <div className="benchSticky" ref={benchStickyRef}>
-          <div style={ui.sectionTitle}>
+          <div
+            style={{
+              ...ui.sectionTitle,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
             <span>休息區</span>
 
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
               <button
                 className={`${benchAddOpen ? ctlDanger : ctl} ${ctlPad}`}
                 style={benchAddOpen ? ui.btnDanger : ui.btnSoft}
@@ -3292,15 +3274,6 @@ export default function App() {
               >
                 刪除：{state.ui.showDelete ? "開" : "關"}
               </button>
-
-              <button
-                className={`${ctl} ${ctlPad}`}
-                style={ui.btnSoft}
-                onClick={() => toggleSection("bench")}
-                title={state.ui.showBench ? "收折" : "展開"}
-              >
-                {state.ui.showBench ? "▾" : "▸"}
-              </button>
             </div>
           </div>
 
@@ -3310,9 +3283,8 @@ export default function App() {
             onDragOver={allowDrop}
             onDrop={(e) => dropTo(e, { type: "bench" })}
           >
-            {state.ui.showBench ? (
-              <>
-                {benchAddOpen ? (
+            <>
+              {benchAddOpen ? (
                   <div
                     className="cardBox"
                     style={{
@@ -3549,9 +3521,6 @@ export default function App() {
                   </div>
                 </div>
               </>
-            ) : (
-              <div style={ui.micro}>（已收折）</div>
-            )}
           </div>
         </div>
       </div>
