@@ -532,6 +532,9 @@ function initialState() {
       amount: "",
     },
 
+    // ✅ 總計下方 Memo
+    chargeMemo: "",
+
     // ✅ 歷史（日期 + 小計/總計 + 用球）
     // counts: { season, casual, leave }
     dailyHistory: [],
@@ -658,6 +661,8 @@ function normalize(st) {
     balls: String(next.ball?.balls ?? base.ball.balls),
     amount: String(next.ball?.amount ?? base.ball.amount),
   };
+
+  next.chargeMemo = String(next.chargeMemo ?? base.chargeMemo ?? "");
 
   next.dailyHistory = Array.isArray(next.dailyHistory) ? next.dailyHistory : [];
   next.dailyHistory = next.dailyHistory
@@ -1475,6 +1480,14 @@ export default function App() {
     applyState((prev) => {
       const next = structuredClone(normalize(prev));
       next.ball[key] = String(v);
+      return next;
+    });
+  }
+
+  function setChargeMemo(v) {
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      next.chargeMemo = String(v);
       return next;
     });
   }
@@ -2348,6 +2361,17 @@ export default function App() {
                     <div style={ui.micro}>
                       總計（全部）：{fmtMoneyYuan(chargeStats.subtotal.total)}｜
                       已收費合計（勾選者）：{fmtMoneyYuan(chargeStats.subtotal.collected)}
+                    </div>
+
+                    <div className="formRow" style={{ ...ui.formRow, alignItems: "flex-start" }}>
+                      <span style={ui.micro}>Memo：</span>
+                      <textarea
+                        className={`${ctl} ${ctlPad}`}
+                        style={{ ...ui.input, width: "min(720px, 100%)", minHeight: 72, resize: "vertical" }}
+                        placeholder="備註（例如：臨打有誰先幫忙墊付、用球原因等）"
+                        value={state.chargeMemo ?? ""}
+                        onChange={(e) => setChargeMemo(e.target.value)}
+                      />
                     </div>
                   </div>
                 </>
