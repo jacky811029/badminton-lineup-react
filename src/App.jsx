@@ -790,6 +790,15 @@ export default function App() {
   const [benchAddOpen, setBenchAddOpen] = useState(false);
   const benchScrollRef = useRef(null);
 
+  // ===== 休息區名條更新（第 6 項）=====
+  const [benchUpdateOpen, setBenchUpdateOpen] = useState(false);
+  const [benchUpdateId, setBenchUpdateId] = useState("");
+  const [benchUpdateName, setBenchUpdateName] = useState("");
+  const [benchUpdateGender, setBenchUpdateGender] = useState("男");
+  const [benchUpdateCategory, setBenchUpdateCategory] = useState("臨打");
+  const [benchUpdateSubName, setBenchUpdateSubName] = useState("");
+  const [benchUpdateSubGender, setBenchUpdateSubGender] = useState("男");
+
   // （已移除）費用設定長按輸入
 
   useEffect(() => {
@@ -998,6 +1007,92 @@ export default function App() {
     setNewCategory("臨打");
     setSubName("");
     setSubGender("男");
+  }
+
+  function loadBenchUpdateFromPlayer(pid) {
+    const p = state.players?.[pid];
+    if (!p) return;
+
+    const cat = normalizeCategoryText(p.category);
+    const origName = String(p.origName ?? p.name ?? "");
+    const origGender = normalizeGenderText(p.origGender ?? p.gender ?? "男");
+    const subName = cat === "季繳請假" ? String(p.subName ?? "") : "";
+    const subGender =
+      cat === "季繳請假" && String(subName || "").trim()
+        ? normalizeGenderText(p.subGender ?? "男")
+        : "男";
+
+    setBenchUpdateId(pid);
+    setBenchUpdateName(origName);
+    setBenchUpdateGender(origGender);
+    setBenchUpdateCategory(cat);
+    setBenchUpdateSubName(subName);
+    setBenchUpdateSubGender(subGender);
+  }
+
+  function updateBenchPlayer() {
+    const pid = String(benchUpdateId || "").trim();
+    const p0 = state.players?.[pid];
+    if (!p0) {
+      alert("請先選擇要更新的名條。");
+      return;
+    }
+
+    const origName = String(benchUpdateName || "").trim();
+    if (!origName) {
+      alert("名字不能為空。");
+      return;
+    }
+
+    const cat = normalizeCategoryText(benchUpdateCategory);
+    const origGender = normalizeGenderText(benchUpdateGender);
+    const subName = cat === "季繳請假" ? String(benchUpdateSubName || "").trim() : "";
+    const subGender =
+      cat === "季繳請假" && subName
+        ? normalizeGenderText(benchUpdateSubGender)
+        : "";
+
+    const effectiveNameBase = cat === "季繳請假" && subName ? subName : origName;
+
+    const nameConflict = Object.values(state.players || {}).some((p) => {
+      if (!p || p.id === pid) return false;
+      const c = normalizeCategoryText(p.category);
+      const sn = c === "季繳請假" ? String(p.subName || "").trim() : "";
+      const eff = c === "季繳請假" && sn ? sn : String(p.name || "");
+      return String(eff).trim() === String(effectiveNameBase).trim();
+    });
+
+    if (nameConflict) {
+      alert("已存在同名（顯示名）隊員，請改名或加註。");
+      return;
+    }
+
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+      const p = next.players?.[pid];
+      if (!p) return prev;
+
+      // Mirror roster import behavior:
+      // - name/gender are display fields
+      // - origName/origGender/subName/subGender are for charge/export
+      const effectiveName = cat === "季繳請假" && subName ? subName : origName;
+      const effectiveGender = cat === "季繳請假" && subName ? subGender : origGender;
+
+      next.players[pid] = {
+        ...p,
+        name: effectiveName,
+        gender: effectiveGender,
+        category: cat,
+        origName,
+        origGender,
+        subName: cat === "季繳請假" ? subName : "",
+        subGender: cat === "季繳請假" ? subGender : "",
+      };
+
+      return next;
+    });
+
+    alert("名條已更新。");
   }
 
   function removePlayer(id) {
@@ -3164,6 +3259,25 @@ export default function App() {
               </button>
 
               <button
+                className={`${benchUpdateOpen ? ctlDanger : ctl} ${ctlPad}`}
+                style={benchUpdateOpen ? ui.btnDanger : ui.btnSoft}
+                onClick={() => {
+                  setBenchUpdateOpen((v) => {
+                    const next = !v;
+                    // 開啟時：優先帶入目前選取的人
+                    if (next) {
+                      const pid = selectedId || benchUpdateId || (benchPlayers?.[0]?.id ?? "");
+                      if (pid) loadBenchUpdateFromPlayer(pid);
+                    }
+                    return next;
+                  });
+                }}
+                title="休息區名條更新"
+              >
+                更新：{benchUpdateOpen ? "開" : "關"}
+              </button>
+
+              <button
                 className={`${state.ui.showDelete ? ctlDanger : ctl} ${ctlPad}`}
                 style={state.ui.showDelete ? ui.btnDanger : ui.btnSoft}
                 onClick={() => toggleSection("delete")}
@@ -3261,6 +3375,102 @@ export default function App() {
                     </div>
                     <div style={{ marginTop: 8, ...ui.micro }}>
                       休息區新增名單可設定分類；季繳請假可填替補姓名/性別。
+                    </div>
+                  </div>
+                ) : null}
+
+                {benchUpdateOpen ? (
+                  <div
+                    className="cardBox"
+                    style={{
+                      ...ui.card,
+                      padding: 10,
+                      boxShadow: "none",
+                    }}
+                  >
+                    <div className="formRow" style={ui.formRow}>
+                      <select
+                        className={`${ctl} ${ctlPad}`}
+                        style={{ ...ui.select, minWidth: 220, flex: 1 }}
+                        value={benchUpdateId}
+                        onChange={(e) => loadBenchUpdateFromPlayer(e.target.value)}
+                        title="選擇要更新的名條"
+                      >
+                        <option value="">（選擇名條）</option>
+                        {benchPlayers.map((p) => {
+                          const disp = getDisplayForBench(p);
+                          return (
+                            <option key={p.id} value={p.id}>
+                              {disp.name}（{disp.gender}）
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      <input
+                        className={`${ctl} ${ctlPad}`}
+                        style={{ ...ui.input, minWidth: 160, flex: 1 }}
+                        placeholder="名字"
+                        value={benchUpdateName}
+                        onChange={(e) => setBenchUpdateName(e.target.value)}
+                      />
+
+                      <select
+                        className={`${ctl} ${ctlPad}`}
+                        style={ui.select}
+                        value={benchUpdateGender}
+                        onChange={(e) => setBenchUpdateGender(e.target.value)}
+                        title="性別"
+                      >
+                        <option value="男">男</option>
+                        <option value="女">女</option>
+                      </select>
+
+                      <select
+                        className={`${ctl} ${ctlPad}`}
+                        style={ui.select}
+                        value={benchUpdateCategory}
+                        onChange={(e) => setBenchUpdateCategory(e.target.value)}
+                        title="分類"
+                      >
+                        <option value="季繳">季繳</option>
+                        <option value="臨打">臨打</option>
+                        <option value="季繳請假">季繳請假</option>
+                      </select>
+
+                      {normalizeCategoryText(benchUpdateCategory) === "季繳請假" ? (
+                        <>
+                          <input
+                            className={`${ctl} ${ctlPad}`}
+                            style={{ ...ui.input, minWidth: 120, flex: 1 }}
+                            placeholder="季繳替補名字"
+                            value={benchUpdateSubName}
+                            onChange={(e) => setBenchUpdateSubName(e.target.value)}
+                          />
+                          <select
+                            className={`${ctl} ${ctlPad}`}
+                            style={ui.select}
+                            value={benchUpdateSubGender}
+                            onChange={(e) => setBenchUpdateSubGender(e.target.value)}
+                            title="季繳替補性別"
+                          >
+                            <option value="男">男</option>
+                            <option value="女">女</option>
+                          </select>
+                        </>
+                      ) : null}
+
+                      <button
+                        className={`${ctl} ${ctlPad}`}
+                        style={ui.btn}
+                        onClick={updateBenchPlayer}
+                      >
+                        更新
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 8, ...ui.micro }}>
+                      更新後的名條會沿用既有排序/顯示/收費等邏輯。
                     </div>
                   </div>
                 ) : null}
