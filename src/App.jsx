@@ -691,6 +691,8 @@ function normalize(st) {
         balls: String(x?.ball?.balls ?? ""),
         amount: String(x?.ball?.amount ?? ""),
       },
+      memo: String(x?.memo ?? ""),
+      chief: String(x?.chief ?? ""),
     }))
     .filter((x) => x.date);
 
@@ -1555,6 +1557,9 @@ export default function App() {
 
       const total = seasonAmt + casualAmt + leaveAmt;
 
+      const chiefRaw = String(next.config?.chief ?? "").trim();
+      const chiefFallback = String(next.config?.payTo ?? "").trim();
+
       const record = {
         date,
         totalPeople: rows.length,
@@ -1571,6 +1576,8 @@ export default function App() {
           balls: String(next.ball?.balls ?? ""),
           amount: String(next.ball?.amount ?? ""),
         },
+        memo: String(next.chargeMemo ?? ""),
+        chief: chiefRaw || chiefFallback,
       };
 
       const idx = next.dailyHistory.findIndex((x) => x.date === date);
@@ -1616,6 +1623,8 @@ export default function App() {
       buckets: String(item.ball?.buckets ?? ""),
       balls: String(item.ball?.balls ?? ""),
       ballAmt: String(item.ball?.amount ?? ""),
+      chief: String(item.chief ?? ""),
+      memo: String(item.memo ?? ""),
     });
   }
 
@@ -1671,6 +1680,8 @@ export default function App() {
           balls: String(histDraft.balls ?? ""),
           amount: String(histDraft.ballAmt ?? ""),
         },
+        chief: String(histDraft.chief ?? ""),
+        memo: String(histDraft.memo ?? ""),
       };
 
       // 先刪舊的
@@ -2565,6 +2576,14 @@ export default function App() {
                                 用球：{String(h.ball?.buckets || 0)}桶{String(h.ball?.balls || 0)}顆｜
                                 金額 {fmtMoneyYuan(parseMoney(h.ball?.amount || 0))}
                               </div>
+
+                              <div style={{ marginTop: 4, ...ui.micro }}>
+                                總務股長：{String(h.chief || "") || "（未填）"}
+                              </div>
+
+                              <div style={{ marginTop: 4, ...ui.micro }}>
+                                Memo：{String(h.memo || "") || "（無）"}
+                              </div>
                             </>
                           ) : (
                             <>
@@ -2740,6 +2759,32 @@ export default function App() {
                                     value={histDraft.ballAmt}
                                     onChange={(e) =>
                                       setHistDraft((p) => ({ ...p, ballAmt: e.target.value }))
+                                    }
+                                  />
+                                </div>
+
+                                <div className="formRow" style={ui.formRow}>
+                                  <span style={ui.badge}>總務股長</span>
+                                  <input
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: 200 }}
+                                    placeholder="人名"
+                                    value={histDraft.chief}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, chief: e.target.value }))
+                                    }
+                                  />
+                                </div>
+
+                                <div className="formRow" style={{ ...ui.formRow, alignItems: "flex-start" }}>
+                                  <span style={ui.badge}>Memo</span>
+                                  <textarea
+                                    className={`${ctl} ${ctlPad}`}
+                                    style={{ ...ui.input, width: "min(720px, 100%)", minHeight: 72, resize: "vertical" }}
+                                    placeholder="備註"
+                                    value={histDraft.memo}
+                                    onChange={(e) =>
+                                      setHistDraft((p) => ({ ...p, memo: e.target.value }))
                                     }
                                   />
                                 </div>
