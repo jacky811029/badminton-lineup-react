@@ -1,16 +1,70 @@
-# React + Vite
+# BADM / badminton-lineup-react
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+羽球排點與管理工具（React + Vite 單頁前端）。
 
-Currently, two official plugins are available:
+## 專案定位
+這是一個給固定羽球團使用的本地前端工具，主要用途：
+- 排點
+- 排隊 / 上場 / 休息區移動
+- 收費管理
+- 用球紀錄
+- 歷史紀錄保存
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+目前資料儲存在瀏覽器 `localStorage`，不依賴後端。
 
-## React Compiler
+## 主要功能
+- 4 面上場區
+- 4 組排隊區
+- 休息區名條管理
+- 點選 / 拖曳移動名條
+- 下場自動補位與排隊推進
+- Undo / Redo
+- 名單匯入 / 匯出
+- 收費管理
+- 用球紀錄
+- 歷史清單
+- 重置功能
+- 增刪修整合入口
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 技術棧
+- React 19
+- Vite 7
+- ESLint
 
-## Expanding the ESLint configuration
+## 開發
+```bash
+npm install
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Build
+```bash
+npm run build
+```
+
+## 專案結構
+- `src/main.jsx`：入口
+- `src/App.jsx`：主要 UI、狀態、事件流與業務邏輯
+- `src/index.css` / `src/App.css`：樣式
+- `public/`：靜態資源
+
+## 目前架構特徵
+- 核心功能目前主要集中在 `src/App.jsx`
+- 採單頁應用與 localStorage persistence
+- 現階段優化原則：
+  - 不大改既有版面
+  - 不脫離既有操作脈絡
+  - 以最小高價值改善為優先
+
+## 驗證基線
+每次修改後至少執行：
+```bash
+npm run build
+```
+
+若涉及互動功能，建議再手動驗：
+- 管理入口
+- 增刪修入口
+- 重置
+- 名單匯入 / 匯出
+- 三區點擊移動

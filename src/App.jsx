@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -64,14 +65,6 @@ const DEFAULT_ROSTER = [
   { name: "呈呈", gender: "女" },
   { name: "W", gender: "男" },
 ];
-
-async function sha256Hex(s) {
-  const enc = new TextEncoder().encode(s);
-  const buf = await crypto.subtle.digest("SHA-256", enc);
-  return [...new Uint8Array(buf)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function emptySlots(groups, slots) {
   return Array.from({ length: groups }, () =>
@@ -344,7 +337,7 @@ function parseRosterText(text) {
 
   const rows = [];
   for (const line of lines) {
-    const parts = line.split(/[\/／]/).map((x) => x.trim());
+    const parts = line.split(/[／/]/).map((x) => x.trim());
     const name = parts[0] || "";
     if (!name) continue;
 
@@ -785,13 +778,15 @@ export default function App() {
   const [subGender, setSubGender] = useState("男");
   const [selectedId, setSelectedId] = useState("");
   const [tick, setTick] = useState(nowSec());
+  const nowMs = tick * 1000;
 
   // ===== 休息區單筆新增（避免佔版面）=====
-  const [benchAddOpen, setBenchAddOpen] = useState(false);
+  const [benchCrudOpen, setBenchCrudOpen] = useState(false);
   const benchScrollRef = useRef(null);
+  const [toast, setToast] = useState("");
+  const toastTimerRef = useRef(null);
 
-  // ===== 休息區名條更新（第 6 項）=====
-  const [benchUpdateOpen, setBenchUpdateOpen] = useState(false);
+  // ===== 休息區增刪修（整併入口） =====
   const [benchUpdateId, setBenchUpdateId] = useState("");
   const [benchUpdateName, setBenchUpdateName] = useState("");
   const [benchUpdateGender, setBenchUpdateGender] = useState("男");
@@ -811,8 +806,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (selectedId && !state.players[selectedId]) setSelectedId("");
-  }, [selectedId, state.players]);
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const selectedPlayer = selectedId ? state.players[selectedId] : null;
+
 
   // ===== 名單匯入/匯出 modal =====
   const [rosterOpen, setRosterOpen] = useState(false);
@@ -830,7 +830,7 @@ export default function App() {
     const el = rosterTextRef.current;
     const text = el ? String(el.value || "") : String(rosterText || "");
     if (!text.trim()) {
-      alert("目前文字框是空的。");
+      showToast("目前文字框是空的。");
       return;
     }
     try {
@@ -841,17 +841,26 @@ export default function App() {
         selectRosterText();
         document.execCommand("copy");
       }
-      alert("已複製到剪貼簿。");
+      showToast("已複製到剪貼簿。");
     } catch (e) {
       // Clipboard API might be blocked on insecure contexts.
       try {
         selectRosterText();
         document.execCommand("copy");
-        alert("已複製到剪貼簿。");
-      } catch (_e2) {
-        alert(`複製失敗：${String(e)}`);
+        showToast("已複製到剪貼簿。");
+      } catch {
+        showToast(`複製失敗：${String(e)}`);
       }
     }
+  }
+
+  function showToast(message) {
+    setToast(String(message || ""));
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToast("");
+      toastTimerRef.current = null;
+    }, 1800);
   }
 
   function openRosterModal() {
@@ -892,12 +901,12 @@ export default function App() {
     });
 
     setSelectedId("");
-    alert("匯入完成（已重置上場/排隊）。");
+    showToast("匯入完成（已重置上場/排隊）。");
   }
 
   // ===== 收費 Modal =====
   const [chargeOpen, setChargeOpen] = useState(false);
-  const today = useMemo(() => formatDateYMD(new Date()), [tick]);
+  const today = useMemo(() => formatDateYMD(new Date(nowMs)), [nowMs]);
   const [chargeDate, setChargeDate] = useState(today);
 
   const [chargeFold, setChargeFold] = useState({
@@ -910,32 +919,11 @@ export default function App() {
   const [histEditKey, setHistEditKey] = useState("");
   const [histDraft, setHistDraft] = useState(null);
 
-  useEffect(() => {
-    if (chargeOpen) {
-      setChargeDate(formatDateYMD(new Date())); // 預設今天
-      setChargeFold({ people: true, ball: true, history: true });
-      setHistEditKey("");
-      setHistDraft(null);
-    }
-  }, [chargeOpen]);
-
   function openChargeModal() {
-    const KEY = "badm_admin_ok_until";
-    const okUntil = Number(localStorage.getItem(KEY) || 0);
-    if (Number.isFinite(okUntil) && okUntil > Date.now()) {
-      setChargeOpen(true);
-      return;
-    }
-
-    const input = prompt("請輸入管理密碼");
-    if (input === null) return;
-    if (String(input).trim() !== "6") {
-      alert("密碼錯誤");
-      return;
-    }
-
-    // cache for 3 minutes
-    localStorage.setItem(KEY, String(Date.now() + 3 * 60 * 1000));
+    setChargeDate(formatDateYMD(new Date(nowMs))); // 預設今天
+    setChargeFold({ people: true, ball: true, history: true });
+    setHistEditKey("");
+    setHistDraft(null);
     setChargeOpen(true);
   }
 
@@ -1007,6 +995,7 @@ export default function App() {
     setNewCategory("臨打");
     setSubName("");
     setSubGender("男");
+    showToast(`已新增：${n}`);
   }
 
   function loadBenchUpdateFromPlayer(pid) {
@@ -1104,7 +1093,7 @@ export default function App() {
       return next;
     });
 
-    alert("名條已更新。");
+    showToast("名條已更新。");
   }
 
   function removePlayer(id) {
@@ -1121,6 +1110,7 @@ export default function App() {
     });
 
     if (selectedId === id) setSelectedId("");
+    showToast(`已刪除：${p.name}`);
   }
 
   function setCourtName(ci, value) {
@@ -1129,6 +1119,36 @@ export default function App() {
       next.courts[ci].name = value;
       return next;
     });
+  }
+
+  function resetLineup() {
+    const ok = confirm("確定重置嗎？會將上場區與排隊區名條移回休息區，並將上場次數歸零。");
+    if (!ok) return;
+
+    applyState((prev) => {
+      const next = structuredClone(normalize(prev));
+
+      const allIds = Object.keys(next.players || {});
+      for (const id of allIds) {
+        if (next.players[id]) {
+          next.players[id].games = 0;
+          next.players[id].totalSeconds = 0;
+        }
+      }
+
+      next.queues = emptySlots(4, 4);
+      next.courts = next.courts.map((c, i) => ({
+        name: c?.name || `場地 ${i + 1}`,
+        slots: ["", "", "", ""],
+        startTs: 0,
+      }));
+      next.bench = sortIdsFilledFirst(allIds, next.players, null);
+
+      return next;
+    });
+
+    setSelectedId("");
+    showToast("已重置：上場區 / 排隊區已清空，次數已歸零。");
   }
 
   function toggleSection(key) {
@@ -1143,8 +1163,6 @@ export default function App() {
   }
 
   // ===== 點選/交換 helpers =====
-  const selectedPlayer = selectedId ? state.players[selectedId] : null;
-
   function pickPlayer(id) {
     if (!id) return;
     setSelectedId((prev) => (prev === id ? "" : id));
@@ -1441,14 +1459,16 @@ export default function App() {
     return Object.keys(state.players || {}).length;
   }, [state.players]);
 
+  const feeCasualText = String(state.config?.feeCasual ?? "").trim();
+  const chiefText = String(state.config?.chief ?? "").trim();
   const feeLine = useMemo(() => {
-    const fee = String(state.config?.feeCasual ?? "").trim();
-    const chief = String(state.config?.chief ?? "").trim();
-    if (!fee && !chief) return "";
-    if (fee && chief) return `臨打費用$${fee}，繳費給總務股長: ${chief}`;
-    if (fee && !chief) return `臨打費用$${fee}，繳費給總務股長：（未填）`;
-    return `繳費給總務股長: ${chief}`;
-  }, [state.config?.feeCasual, state.config?.chief]);
+    if (!feeCasualText && !chiefText) return "";
+    if (feeCasualText && chiefText)
+      return `臨打費用$${feeCasualText}，繳費給總務股長: ${chiefText}`;
+    if (feeCasualText && !chiefText)
+      return `臨打費用$${feeCasualText}，繳費給總務股長：（未填）`;
+    return `繳費給總務股長: ${chiefText}`;
+  }, [feeCasualText, chiefText]);
 
   // ===== 收費表資料 =====
   function parseMoney(v) {
@@ -1471,12 +1491,15 @@ export default function App() {
     return Math.max(0, Math.floor(n));
   }
 
-  function feeByCategory(cat) {
-    const c = normalizeCategoryText(cat);
-    if (c === "季繳") return parseMoney(state.config.feeSeason);
-    if (c === "季繳請假") return parseMoney(state.config.feeLeave);
-    return parseMoney(state.config.feeCasual);
-  }
+  const feeByCategory = useCallback(
+    (cat) => {
+      const c = normalizeCategoryText(cat);
+      if (c === "季繳") return parseMoney(state.config.feeSeason);
+      if (c === "季繳請假") return parseMoney(state.config.feeLeave);
+      return parseMoney(state.config.feeCasual);
+    },
+    [state.config.feeSeason, state.config.feeLeave, state.config.feeCasual]
+  );
 
   const chargeRows = useMemo(() => {
     const arr = Object.values(state.players || {});
@@ -1536,13 +1559,7 @@ export default function App() {
         collected,
       },
     };
-  }, [
-    chargeRows,
-    state.payments,
-    state.config.feeSeason,
-    state.config.feeCasual,
-    state.config.feeLeave,
-  ]);
+  }, [chargeRows, state.payments, feeByCategory]);
 
   // ✅ 已收費勾選：true→false 要確認
   function togglePaid(pid) {
@@ -1673,7 +1690,7 @@ export default function App() {
       return next;
     });
 
-    alert("已保存到歷史清單（同日期會覆蓋更新）。");
+    showToast("已保存到歷史清單（同日期會覆蓋更新）。");
   }
 
   function deleteHistory(date) {
@@ -2291,19 +2308,6 @@ export default function App() {
             >
               <div style={{ fontWeight: 900, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <span>收費清單</span>
-                {(() => {
-                  const okUntil = Number(localStorage.getItem("badm_admin_ok_until") || 0);
-                  const leftMs = okUntil - Date.now();
-                  if (!Number.isFinite(leftMs) || leftMs <= 0) return null;
-                  const leftSec = Math.floor(leftMs / 1000);
-                  const mm = Math.floor(leftSec / 60);
-                  const ss = leftSec % 60;
-                  return (
-                    <span style={ui.badge} title="管理密碼免輸入剩餘時間">
-                      密碼免輸入倒數 {mm}:{String(ss).padStart(2, "0")}
-                    </span>
-                  );
-                })()}
               </div>
               <button
                 className={`${ctl} ${ctlPad}`}
@@ -2925,18 +2929,10 @@ export default function App() {
                 >
                   取消
                 </button>
-
-                <button
-                  className={`${ctl} ${ctlPad}`}
-                  style={ui.btnSoft}
-                  onClick={() => placeSelected({ type: "bench" })}
-                >
-                  放回
-                </button>
               </div>
 
               <div style={{ ...ui.micro, marginTop: 6, textAlign: "center" }}>
-                點目的地格子放置；點到有人會交換並跳確認
+                直接點休息區、上場區或排隊區目標位置即可移動；點到有人會交換並跳確認
               </div>
             </div>
           </div>
@@ -3024,8 +3020,42 @@ export default function App() {
           >
             管理
           </button>
+
+          <button
+            className={`${ctlDanger} ${ctlPad}`}
+            style={ui.btnDanger}
+            onClick={resetLineup}
+            title="重置上場區 / 排隊區並將上場次數歸零"
+          >
+            重置
+          </button>
         </div>
       </div>
+
+      {toast ? (
+        <div
+          style={{
+            position: "fixed",
+            right: 14,
+            bottom: 14,
+            zIndex: 10000,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              ...ui.card,
+              padding: "10px 12px",
+              background: "rgba(15,23,42,.92)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,.12)",
+              boxShadow: "0 10px 30px rgba(15,23,42,.28)",
+            }}
+          >
+            {toast}
+          </div>
+        </div>
+      ) : null}
 
       <div className="layout">
         {/* Left */}
@@ -3038,7 +3068,7 @@ export default function App() {
               {state.courts.map((court, ci) => {
                 const empty = isAllEmpty(court.slots);
                 const elapsed = court.startTs
-                  ? Math.max(0, Math.floor((Date.now() - court.startTs) / 1000))
+                  ? Math.max(0, Math.floor((nowMs - court.startTs) / 1000))
                   : 0;
 
                 return (
@@ -3249,40 +3279,22 @@ export default function App() {
 
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
               <button
-                className={`${benchAddOpen ? ctlDanger : ctl} ${ctlPad}`}
-                style={benchAddOpen ? ui.btnDanger : ui.btnSoft}
-                onClick={() => setBenchAddOpen((v) => !v)}
-                title="休息區單筆新增"
-              >
-                新增：{benchAddOpen ? "開" : "關"}
-              </button>
-
-              <button
-                className={`${benchUpdateOpen ? ctlDanger : ctl} ${ctlPad}`}
-                style={benchUpdateOpen ? ui.btnDanger : ui.btnSoft}
+                className={`${benchCrudOpen || state.ui.showDelete ? ctlDanger : ctl} ${ctlPad}`}
+                style={benchCrudOpen || state.ui.showDelete ? ui.btnDanger : ui.btnSoft}
                 onClick={() => {
-                  setBenchUpdateOpen((v) => {
+                  setBenchCrudOpen((v) => {
                     const next = !v;
-                    // 開啟時：優先帶入目前選取的人
                     if (next) {
                       const pid = selectedId || benchUpdateId || (benchPlayers?.[0]?.id ?? "");
                       if (pid) loadBenchUpdateFromPlayer(pid);
                     }
                     return next;
                   });
+                  toggleSection("delete");
                 }}
-                title="休息區名條更新"
+                title="休息區增刪修"
               >
-                更新：{benchUpdateOpen ? "開" : "關"}
-              </button>
-
-              <button
-                className={`${state.ui.showDelete ? ctlDanger : ctl} ${ctlPad}`}
-                style={state.ui.showDelete ? ui.btnDanger : ui.btnSoft}
-                onClick={() => toggleSection("delete")}
-                title="開啟後才會顯示每個人右側的刪除按鈕"
-              >
-                刪除：{state.ui.showDelete ? "開" : "關"}
+                增刪修：{benchCrudOpen ? "開" : "關"}
               </button>
             </div>
           </div>
@@ -3294,7 +3306,7 @@ export default function App() {
             onDrop={(e) => dropTo(e, { type: "bench" })}
           >
             <>
-              {benchAddOpen ? (
+              {benchCrudOpen ? (
                   <div
                     className="cardBox"
                     style={{
@@ -3363,12 +3375,12 @@ export default function App() {
                       </button>
                     </div>
                     <div style={{ marginTop: 8, ...ui.micro }}>
-                      休息區新增名單可設定分類；季繳請假可填替補姓名/性別。
+                      新增名單可設定分類；季繳請假可填替補姓名/性別。
                     </div>
                   </div>
                 ) : null}
 
-                {benchUpdateOpen ? (
+                {benchCrudOpen ? (
                   <div
                     className="cardBox"
                     style={{
@@ -3480,7 +3492,7 @@ export default function App() {
                     </div>
 
                     <div style={{ marginTop: 8, ...ui.micro }}>
-                      更新模式：請先點選右側要更新的名條載入。更新後會沿用既有排序/顯示/收費等邏輯。
+                      更新模式：請先點選右側名條載入；刪除按鈕也會在名條右側顯示。
                     </div>
                   </div>
                 ) : null}
@@ -3504,8 +3516,12 @@ export default function App() {
                           draggable
                           onDragStart={(e) => dragStart(e, p.id)}
                           onClick={() => {
+                            if (selectedId && selectedId !== p.id) {
+                              placeSelected({ type: "bench" });
+                              return;
+                            }
                             pickPlayer(p.id);
-                            if (benchUpdateOpen) loadBenchUpdateFromPlayer(p.id);
+                            if (benchCrudOpen) loadBenchUpdateFromPlayer(p.id);
                           }}
                           style={{
                             ...ui.benchItem,
