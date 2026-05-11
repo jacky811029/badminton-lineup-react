@@ -1301,6 +1301,31 @@ export default function App() {
     if (pid) pickPlayer(pid);
   }
 
+  function handleBenchAreaClick(e) {
+    if (!selectedId) return;
+
+    const selectedLocation = locatePlayer(state, selectedId);
+    if (
+      !selectedLocation ||
+      (selectedLocation.type !== "queue" && selectedLocation.type !== "court")
+    ) {
+      return;
+    }
+
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    if (
+      target.closest(
+        ".benchItemBox, button, input, select, textarea, a, [role='button']"
+      )
+    ) {
+      return;
+    }
+
+    placeSelected({ type: "bench" });
+  }
+
   // ===== Drag & Drop =====
   function allowDrop(e) {
     e.preventDefault();
@@ -1454,6 +1479,10 @@ export default function App() {
       .filter((id) => (seen.has(id) ? false : (seen.add(id), true)))
       .map((id) => state.players[id]);
   }, [state.players, state.bench]);
+
+  const selectedLocation = selectedId ? locatePlayer(state, selectedId) : null;
+  const canReturnSelectedToBench =
+    selectedLocation?.type === "queue" || selectedLocation?.type === "court";
 
   const totalPeople = useMemo(() => {
     return Object.keys(state.players || {}).length;
@@ -3500,7 +3529,15 @@ export default function App() {
                 <div
                   ref={benchScrollRef}
                   className="benchScrollArea"
-                  style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}
+                  onClick={handleBenchAreaClick}
+                  title={canReturnSelectedToBench ? "點擊空白處可移回休息區" : undefined}
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    paddingRight: 4,
+                    cursor: canReturnSelectedToBench ? "copy" : undefined,
+                  }}
                 >
                   <div className="benchList2" style={ui.list2}>
                     {benchPlayers.map((p) => {
@@ -3560,6 +3597,24 @@ export default function App() {
                     );
                     })}
                   </div>
+
+                  {canReturnSelectedToBench ? (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: "8px 10px",
+                        borderRadius: 12,
+                        border: "1px dashed rgba(34,197,94,.35)",
+                        background: "rgba(240,253,244,.72)",
+                        color: "#166534",
+                        fontSize: 12,
+                        fontWeight: 900,
+                        textAlign: "center",
+                      }}
+                    >
+                      點擊這裡可移回休息區
+                    </div>
+                  ) : null}
 
                   <div style={{ marginTop: 10, ...ui.micro }}>
                     下場流程：本場回休息 → 排隊1補位（不足4也補） → 排隊2/3/4往前推 →
